@@ -3,6 +3,7 @@
   "id": "test_alt",
   "display_name": "Test Alt",
   "dialogue_path": "res://tests/fixtures/themes/test_alt/dialogue.json",
+  "content_path": "res://tests/fixtures/themes/test_alt/content.json",
   "colors": {
     "background": "#f0f0f0",
     "background_top": "#ffffff",

@@ -110,9 +110,10 @@ func apply_theme() -> void:
 		_board_view.refresh_theme()
 
 
-## New local match with the chosen seats (rng_seed < 0: random), then the board screen.
+## New local match with the chosen seats (rng_seed < 0: random), then the board screen. The active
+## pack's content overlay (terms, space / group names, card text) is applied here, at match start.
 func begin_match(seats: Array[Dictionary], window: Window, rng_seed: int = -1) -> void:
-	controller = GameSetup.new_game(rng_seed, seats)
+	controller = GameSetup.new_game(rng_seed, seats, UiStyle.content_overlay())
 	controller.determine_start_player()
 	var gs := get_node_or_null("/root/GameState") if is_inside_tree() else null  # tests run outside the tree
 	if gs != null:
@@ -126,7 +127,7 @@ func start(window: Window) -> void:
 		_scale = DisplayScale.apply(window)
 	theme = UiStyle.make_theme()
 	if controller == null:
-		controller = GameState.new_local_game()
+		controller = GameState.new_local_game(-1, [], UiStyle.content_overlay())
 	_build_ui()
 	_bot_timer = Timer.new()
 	_bot_timer.one_shot = true

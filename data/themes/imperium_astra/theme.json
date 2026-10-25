@@ -3,6 +3,7 @@
   "id": "imperium_astra",
   "display_name": "Imperium Astra",
   "dialogue_path": "res://data/themes/imperium_astra/dialogue.json",
+  "content_path": "res://data/themes/imperium_astra/content.json",
   "colors": {
     "background": "#070b1a",
     "background_top": "#121b3d",

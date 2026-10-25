@@ -4,7 +4,7 @@ Undecided product points. Placeholders are marked `_placeholder` / `TODO` in dat
 
 | # | Question | Current placeholder |
 |---|---|---|
-| Q1 | Player setup: how many seats, names, colors, AI or human? | Seat count and Human/Bot now chosen on the setup screen (Q19). Names/colors: `data/rules.json` `seat_pool` "Commander 1-6" (`_placeholder: true`); `local_players` is only the no-setup default for tests |
+| Q1 | Player setup: how many seats, names, colors, AI or human? | Seat count and Human/Bot now chosen on the setup screen (Q19). Names/colors: `data/rules.json` `seat_pool` "Commander 1-6" (`_placeholder: true`); `local_players` is only the no-setup default for tests. TODO (P5-FEEL A6): these default seat names are space-theme words in shared `rules.json` and are not covered by the pack content overlay, so a second pack still shows "Commander N"; whether seat names become pack data (e.g. an overlay `seat_names` key) is undecided |
 | Q2 | Currency name/symbol for the theme (credits, denarii, ...)? | `$` in UI and card text |
 | Q3 | Auction flow. Official: bids from $10, $1 steps, any player; open outcry isn't specified for digital play. | `Auction`: seat order starting left of the current player; each bidder raises or drops out for good; ends when only the high bidder is left. Quick-bid buttons +1/+10/+50/+100 (`data/ui.json`) |
 | Q4 | ~~Trade UI and rules module~~ **Resolved (P1-TRD):** `Trade` module + `TradePanel`; any time, any phase except game over; one open offer at a time. | n/a |

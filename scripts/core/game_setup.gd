@@ -10,7 +10,9 @@ const BOT_PATH := "res://data/bot.json"
 
 ## rng_seed < 0 picks a random seed. Players come from `seats` (see seats()) or, when empty, from
 ## rules.json local_players (P0 hotseat). A seat is {display_name, color, is_bot}.
-static func new_game(rng_seed: int = -1, seat_specs: Array[Dictionary] = []) -> TurnController:
+## `content` is the active theme pack's content overlay (ContentOverlay: terms, space / group
+## names, optional card text), passed in by the caller; {} keeps board.json / cards.json words.
+static func new_game(rng_seed: int = -1, seat_specs: Array[Dictionary] = [], content: Dictionary = {}) -> TurnController:
 	var config := RulesConfig.from_dict(JsonData.load_json(RULES_PATH))
 	var cards := JsonData.load_json(CARDS_PATH)
 	var tc := TurnController.new()
@@ -24,6 +26,7 @@ static func new_game(rng_seed: int = -1, seat_specs: Array[Dictionary] = []) -> 
 		tc.dice.rng.seed = rng_seed
 	tc.chance = CardDeck.from_array(&"chance", cards.get("chance", []))
 	tc.community_chest = CardDeck.from_array(&"community_chest", cards.get("community_chest", []))
+	ContentOverlay.apply(content, tc.board, [tc.chance, tc.community_chest])
 	tc.chance.shuffle(tc.dice.rng)
 	tc.community_chest.shuffle(tc.dice.rng)
 	var specs := seat_specs if not seat_specs.is_empty() else config.local_players

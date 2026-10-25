@@ -1,0 +1,59 @@
+{
+  "_doc": "Test-only content overlay for the test_alt fixture pack (not shipped, not a real theme). Every word differs from imperium_astra so a leak of default-pack words is detectable. tests/test_content_overlay.gd adds card_text for the remaining cards in code.",
+  "id": "test_alt",
+  "terms": {
+    "house": "t-house", "houses": "t-houses", "hotel": "t-hotel",
+    "chance": "t-chance", "community_chest": "t-chest",
+    "jail": "t-jail", "jail_fine": "t-jail fine", "buy": "T-buy", "pardon": "t-pardon", "bank": "t-bank",
+    "buys": "t-buys", "unowned": "t-unowned", "player": "t-player", "players": "t-players"
+  },
+  "group_names": {
+    "brown": "T Group 1", "light_blue": "T Group 2", "pink": "T Group 3", "orange": "T Group 4",
+    "red": "T Group 5", "yellow": "T Group 6", "green": "T Group 7", "dark_blue": "T Group 8"
+  },
+  "space_names": {
+    "0": {"display_name": "T Space 0", "short_name": "T0"},
+    "1": {"display_name": "T Space 1"},
+    "2": {"display_name": "T Space 2"},
+    "3": {"display_name": "T Space 3"},
+    "4": {"display_name": "T Space 4"},
+    "5": {"display_name": "T Space 5"},
+    "6": {"display_name": "T Space 6"},
+    "7": {"display_name": "T Space 7"},
+    "8": {"display_name": "T Space 8"},
+    "9": {"display_name": "T Space 9"},
+    "10": {"display_name": "T Space 10"},
+    "11": {"display_name": "T Space 11"},
+    "12": {"display_name": "T Space 12"},
+    "13": {"display_name": "T Space 13"},
+    "14": {"display_name": "T Space 14"},
+    "15": {"display_name": "T Space 15"},
+    "16": {"display_name": "T Space 16"},
+    "17": {"display_name": "T Space 17"},
+    "18": {"display_name": "T Space 18"},
+    "19": {"display_name": "T Space 19"},
+    "20": {"display_name": "T Space 20"},
+    "21": {"display_name": "T Space 21"},
+    "22": {"display_name": "T Space 22"},
+    "23": {"display_name": "T Space 23"},
+    "24": {"display_name": "T Space 24"},
+    "25": {"display_name": "T Space 25"},
+    "26": {"display_name": "T Space 26"},
+    "27": {"display_name": "T Space 27"},
+    "28": {"display_name": "T Space 28"},
+    "29": {"display_name": "T Space 29"},
+    "30": {"display_name": "T Space 30"},
+    "31": {"display_name": "T Space 31"},
+    "32": {"display_name": "T Space 32"},
+    "33": {"display_name": "T Space 33"},
+    "34": {"display_name": "T Space 34"},
+    "35": {"display_name": "T Space 35"},
+    "36": {"display_name": "T Space 36"},
+    "37": {"display_name": "T Space 37"},
+    "38": {"display_name": "T Space 38"},
+    "39": {"display_name": "T Space 39"}
+  },
+  "card_text": {
+    "ch_advance_go": "T card: advance to T Space 0."
+  }
+}

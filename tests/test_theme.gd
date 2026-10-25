@@ -1,7 +1,9 @@
 extends TestCase
-## Theme pack tests (P3-THEME): the active theme loads, carries every key the UI reads, keeps
-## text readable (WCAG-style contrast ratios), stays presentation-only, and the UI picks it up
+## Theme pack tests (P3-THEME, P5-FEEL A8): every registered pack (data/themes/index.json) loads,
+## carries every key the UI reads, keeps text readable (WCAG-style contrast ratios), stays
+## presentation-only in every pack file, ships a complete content overlay, and the UI picks it up
 ## (themed buttons stay touch-sized; BoardView corners and starfield come from theme data).
+## Packs are switched with UiStyle.set_theme; teardown restores the shipped default.
 
 const REQUIRED_COLORS: Array[String] = [
 	"background", "background_top", "panel", "panel_border", "accent", "accent_dim", "text",
@@ -11,7 +13,19 @@ const REQUIRED_COLORS: Array[String] = [
 ]
 ## Keys that would mean rules data leaked into the theme pack.
 const RULE_KEYS: Array[String] = ["spaces", "space_type", "price", "rent", "rents", "cards", "opcode", "groups"]
+## Rules fields from board.json / cards.json that must not appear as a key anywhere in a pack file.
+const RULE_FIELDS: Array[String] = [
+	"list_price", "house_cost", "hotel_cost", "mortgage_value", "tax_amount", "property_id",
+	"color_group_id", "params",
+]
+## theme.json keys that point at other files of the pack.
+const PATH_KEYS: Array[String] = ["dialogue_path", "content_path"]
 const CORNERS: Array[String] = ["GO", "JAIL_CORNER", "FREE_PARKING", "GO_TO_JAIL"]
+const FIXTURE_INDEX := "res://tests/fixtures/themes/index.json"
+
+
+func teardown() -> void:
+	UiStyle.reset_theme()
 
 
 static func _luminance(c: Color) -> float:
@@ -30,64 +44,163 @@ func _theme() -> Dictionary:
 	return UiStyle.theme_data()
 
 
+## Registered (shipped) pack ids, in index order.
+func _pack_ids() -> Array[String]:
+	var out: Array[String] = []
+	for p in UiStyle.theme_packs():
+		out.append(String(p["id"]))
+	return out
+
+
+## Every file a pack references: theme.json plus its dialogue / content paths.
+static func _pack_files(theme_path: String) -> Array[String]:
+	var out: Array[String] = [theme_path]
+	var t := JsonData.load_json(theme_path)
+	for k in PATH_KEYS:
+		if t.get(k) is String:
+			out.append(String(t[k]))
+	return out
+
+
+## Keys (at any depth) of `v` that are rules keys / fields.
+static func _rule_keys_in(v: Variant) -> Array[String]:
+	var out: Array[String] = []
+	if v is Dictionary:
+		for k: Variant in v:
+			if String(k) in RULE_KEYS or String(k) in RULE_FIELDS:
+				out.append(String(k))
+			out.append_array(_rule_keys_in(v[k]))
+	elif v is Array:
+		for e: Variant in v:
+			out.append_array(_rule_keys_in(e))
+	return out
+
+
+static func _card_ids() -> Array[String]:
+	var out: Array[String] = []
+	var cards := JsonData.load_json(GameSetup.CARDS_PATH)
+	for deck in ["chance", "community_chest"]:
+		for c: Dictionary in cards.get(deck, []):
+			out.append(String(c["card_id"]))
+	return out
+
+
 func test_theme_loads_from_ui_json_path() -> void:
 	var path := String(UiStyle.data().get("theme_path", ""))
 	check(path.begins_with("res://data/themes/"), "ui.json theme_path points into data/themes/")
 	check(FileAccess.file_exists(path), "theme file exists")
 	check_eq(String(_theme().get("id", "")), "imperium_astra", "theme id")
+	check(not _pack_ids().is_empty(), "at least one registered pack")
 	done()
 
 
 func test_required_colors_present_and_valid() -> void:
-	var colors: Dictionary = _theme().get("colors", {})
-	for k in REQUIRED_COLORS:
-		check(colors.has(k), "color '%s' present" % k)
-		check(Color.html_is_valid(String(colors.get(k, ""))), "color '%s' is valid hex" % k)
-		check(UiStyle.color(k) != UiStyle.MISSING_COLOR, "UiStyle.color('%s') resolves" % k)
+	for id in _pack_ids():
+		check(UiStyle.set_theme(id), "%s: set_theme" % id)
+		var colors: Dictionary = _theme().get("colors", {})
+		for k in REQUIRED_COLORS:
+			check(colors.has(k), "%s: color '%s' present" % [id, k])
+			check(Color.html_is_valid(String(colors.get(k, ""))), "%s: color '%s' is valid hex" % [id, k])
+			check(UiStyle.color(k) != UiStyle.MISSING_COLOR, "%s: UiStyle.color('%s') resolves" % [id, k])
 	check_eq(UiStyle.color("no_such_key"), UiStyle.MISSING_COLOR, "missing key is loud magenta")
 	done()
 
 
 func test_style_sections_present() -> void:
-	for section in ["button", "panel", "board", "starfield"]:
-		check(_theme().get(section) is Dictionary, "section '%s' present" % section)
-	check(UiStyle.theme_num("button", "corner_radius", -1) >= 0, "button corner_radius")
-	check(UiStyle.theme_num("panel", "accent_width", -1) > 0, "panel accent_width")
-	var share := UiStyle.theme_num("board", "group_bar_share", -1)
-	check(share > 0.1 and share < 0.4, "group bar share leaves room for the label")
-	var corners: Dictionary = _theme()["board"].get("corner_colors", {})
-	for c in CORNERS:
-		check(Color.html_is_valid(String(corners.get(c, ""))), "corner color for %s" % c)
+	for id in _pack_ids():
+		check(UiStyle.set_theme(id), "%s: set_theme" % id)
+		for section in ["button", "panel", "board", "starfield"]:
+			check(_theme().get(section) is Dictionary, "%s: section '%s' present" % [id, section])
+		check(UiStyle.theme_num("button", "corner_radius", -1) >= 0, "%s: button corner_radius" % id)
+		check(UiStyle.theme_num("panel", "accent_width", -1) > 0, "%s: panel accent_width" % id)
+		var share := UiStyle.theme_num("board", "group_bar_share", -1)
+		check(share > 0.1 and share < 0.4, "%s: group bar share leaves room for the label" % id)
+		var corners: Dictionary = _theme().get("board", {}).get("corner_colors", {})
+		for c in CORNERS:
+			check(Color.html_is_valid(String(corners.get(c, ""))), "%s: corner color for %s" % [id, c])
 	done()
 
 
 func test_text_contrast() -> void:
-	var text := UiStyle.color("text")
-	check(contrast(text, UiStyle.color("background")) >= 7.0, "body text on background (AAA)")
-	check(contrast(text, UiStyle.color("panel")) >= 7.0, "body text on panels (AAA)")
-	check(contrast(text, UiStyle.color("board_cell")) >= 7.0, "board labels on cells (AAA)")
-	check(contrast(UiStyle.color("text_muted"), UiStyle.color("panel")) >= 4.5, "muted text on panels (AA)")
-	var bt := UiStyle.color("button_text")
-	for bg in ["button", "button_hover"]:
-		check(contrast(bt, UiStyle.color(bg)) >= 4.5, "button text on %s (AA)" % bg)
-	check(contrast(UiStyle.color("accent"), UiStyle.color("button_pressed")) >= 4.5, "pressed text (AA)")
-	check(contrast(UiStyle.color("accent"), UiStyle.color("background")) >= 4.5, "gold titles on background (AA)")
-	check(contrast(UiStyle.color("alert"), UiStyle.color("panel")) >= 4.5, "alert text on panels (AA)")
-	check(contrast(UiStyle.color("dice_pip"), UiStyle.color("dice_face")) >= 7.0, "dice pips")
-	check(contrast(UiStyle.color("button_text_disabled"), UiStyle.color("button_disabled")) >= 2.5,
-			"disabled text still visible")
-	for c in CORNERS:
-		check(contrast(text, BoardView.corner_tint(Space.Type[c])) >= 4.5, "corner %s label contrast" % c)
+	for id in _pack_ids():
+		check(UiStyle.set_theme(id), "%s: set_theme" % id)
+		var text := UiStyle.color("text")
+		check(contrast(text, UiStyle.color("background")) >= 7.0, "%s: body text on background (AAA)" % id)
+		check(contrast(text, UiStyle.color("panel")) >= 7.0, "%s: body text on panels (AAA)" % id)
+		check(contrast(text, UiStyle.color("board_cell")) >= 7.0, "%s: board labels on cells (AAA)" % id)
+		check(contrast(UiStyle.color("text_muted"), UiStyle.color("panel")) >= 4.5, "%s: muted text on panels (AA)" % id)
+		var bt := UiStyle.color("button_text")
+		for bg in ["button", "button_hover"]:
+			check(contrast(bt, UiStyle.color(bg)) >= 4.5, "%s: button text on %s (AA)" % [id, bg])
+		check(contrast(UiStyle.color("accent"), UiStyle.color("button_pressed")) >= 4.5, "%s: pressed text (AA)" % id)
+		check(contrast(UiStyle.color("accent"), UiStyle.color("background")) >= 4.5, "%s: titles on background (AA)" % id)
+		check(contrast(UiStyle.color("alert"), UiStyle.color("panel")) >= 4.5, "%s: alert text on panels (AA)" % id)
+		check(contrast(UiStyle.color("dice_pip"), UiStyle.color("dice_face")) >= 7.0, "%s: dice pips" % id)
+		check(contrast(UiStyle.color("button_text_disabled"), UiStyle.color("button_disabled")) >= 2.5,
+				"%s: disabled text still visible" % id)
+		for c in CORNERS:
+			check(contrast(text, BoardView.corner_tint(Space.Type[c])) >= 4.5, "%s: corner %s label contrast" % [id, c])
 	done()
 
 
 func test_theme_is_presentation_only() -> void:
-	var t := _theme()
-	for k in RULE_KEYS:
-		check(not t.has(k), "theme has no rules key '%s'" % k)
-	var text := JSON.stringify(t)
-	for k in ["\"price\"", "\"rent", "\"opcode\"", "\"space_type\""]:
-		check(not text.contains(k), "theme JSON has no %s" % k)
+	for id in _pack_ids():
+		check(UiStyle.set_theme(id), "%s: set_theme" % id)
+		var t := _theme()
+		for k in RULE_KEYS:
+			check(not t.has(k), "%s: theme has no rules key '%s'" % [id, k])
+		var text := JSON.stringify(t)
+		for k in ["\"price\"", "\"rent", "\"opcode\"", "\"space_type\""]:
+			check(not text.contains(k), "%s: theme JSON has no %s" % [id, k])
+	done()
+
+
+## Every file of every pack (shipped index and the test fixture index): referenced from its
+## theme.json, present on disk, and free of rules keys at any depth. Pack folders hold no stray
+## files (a file nobody references could smuggle rules data past the loaders).
+func test_every_pack_file_presentation_only() -> void:
+	var entries := UiStyle.theme_packs()
+	UiStyle.theme_index_path = FIXTURE_INDEX
+	for p in UiStyle.theme_packs():
+		if FileAccess.file_exists(String(p["theme_path"])) and not (p in entries):
+			entries.append(p)
+	UiStyle.theme_index_path = UiStyle.THEME_INDEX_PATH
+	check(entries.size() >= 2, "shipped and fixture packs scanned")
+	for p in entries:
+		var theme_path := String(p["theme_path"])
+		var files := _pack_files(theme_path)
+		check_eq(files.size(), PATH_KEYS.size() + 1, "%s: theme.json names dialogue_path and content_path" % p["id"])
+		for f in files:
+			check(FileAccess.file_exists(f), "%s: %s exists" % [p["id"], f])
+			check_eq(_rule_keys_in(JsonData.load_json(f)), [] as Array[String], "%s: %s has no rules keys" % [p["id"], f])
+		var dir := theme_path.get_base_dir()
+		for fname in DirAccess.get_files_at(dir):
+			if fname.ends_with(".json"):
+				check(dir.path_join(fname) in files, "%s: %s is referenced by theme.json" % [p["id"], fname])
+	done()
+
+
+## A5: every registered pack's content overlay names every term, space and group (no default-pack
+## word can leak through), uses only whitelisted keys and matches its pack id; card_text optional.
+func test_every_pack_has_complete_content_overlay() -> void:
+	var board := Board.from_dict(JsonData.load_json(GameSetup.BOARD_PATH))
+	var card_ids := _card_ids()
+	for id in _pack_ids():
+		check(UiStyle.set_theme(id), "%s: set_theme" % id)
+		var path := String(_theme().get("content_path", ""))
+		check(path != "" and FileAccess.file_exists(path), "%s: content_path set and present" % id)
+		var overlay := UiStyle.content_overlay()
+		check_eq(String(overlay.get("id", "")), id, "%s: content id matches pack id" % id)
+		check_eq(ContentOverlay.problems(overlay, board, card_ids, true), [] as Array[String],
+				"%s: content overlay complete and valid" % id)
+	done()
+
+
+func test_overlay_keys_never_rules_keys() -> void:
+	for k in ContentOverlay.KEYS:
+		check(not (k in RULE_KEYS) and not (k in RULE_FIELDS), "overlay key '%s' is not a rules key" % k)
+	for k in ContentOverlay.SPACE_NAME_KEYS:
+		check(not (k in RULE_KEYS) and not (k in RULE_FIELDS), "space_names field '%s' is not a rules key" % k)
 	done()
 
 
@@ -110,14 +223,16 @@ func test_theme_applies_to_ui() -> void:
 
 
 func test_board_corners_distinct() -> void:
-	var cell := UiStyle.color("board_cell")
-	var go := BoardView.corner_tint(Space.Type.GO)
-	var brig := BoardView.corner_tint(Space.Type.JAIL_CORNER)
-	check(go != cell and brig != cell, "Launch Bay and Brig corners are tinted")
-	check(go != brig, "Launch Bay and Brig tints differ")
-	check(BoardView.corner_mark(Space.Type.GO) != "", "Launch Bay mark")
-	check(BoardView.corner_mark(Space.Type.JAIL_CORNER) != "", "Brig mark")
-	check_eq(BoardView.corner_tint(Space.Type.STREET), cell, "non-corner falls back to cell color")
+	for id in _pack_ids():
+		check(UiStyle.set_theme(id), "%s: set_theme" % id)
+		var cell := UiStyle.color("board_cell")
+		var go := BoardView.corner_tint(Space.Type.GO)
+		var jail := BoardView.corner_tint(Space.Type.JAIL_CORNER)
+		check(go != cell and jail != cell, "%s: GO and jail corners are tinted" % id)
+		check(go != jail, "%s: GO and jail tints differ" % id)
+		check(BoardView.corner_mark(Space.Type.GO) != "", "%s: GO mark" % id)
+		check(BoardView.corner_mark(Space.Type.JAIL_CORNER) != "", "%s: jail mark" % id)
+		check_eq(BoardView.corner_tint(Space.Type.STREET), cell, "%s: non-corner falls back to cell color" % id)
 	done()
 
 

@@ -87,3 +87,26 @@ pack's `dialogue_path`, setup screen, starfield, board chrome). Supported contra
 setup screen before match start; `Main.select_theme` refuses once the match screen is built.
 `UiStyle.reset_theme()` restores the default (tests call it in teardown). A new pack adds its
 folder and one index entry. Covered by `tests/test_theme_switch.gd`.
+
+### Pack content overlay (P5-FEEL A5 / A6)
+
+Each pack's `theme.json` names a `content_path` (e.g. `data/themes/imperium_astra/content.json`)
+holding the pack's words. `Main.begin_match` reads it via `UiStyle.content_overlay()` and passes it
+to `GameSetup.new_game(seed, seats, content)`, which applies it once at match start
+(`scripts/core/content_overlay.gd`); core never reads `UiStyle` or `data/ui.json`. Whitelisted
+top-level keys only (none collide with the rules keys `spaces` / `groups` / `cards` / ...):
+
+| Key | Shape | Replaces |
+|---|---|---|
+| `terms` | `{term key: text}` | `board.json` `terms` |
+| `space_names` | `{"<space index>": {display_name, short_name?}}` | space names (`short_name` defaults to the new `display_name`) |
+| `group_names` | `{group id: text}` | group `display_name` (group colors stay in `board.json`) |
+| `card_text` | `{card_id: text}` (optional) | card text from `cards.json` |
+
+Prices, rents, space types, opcodes and group colors never appear in a pack (one shared classic
+`rules.json` / `board.json` / `cards.json`). Every registered pack's overlay must name every term,
+space and group so no default-pack word leaks (`tests/test_theme.gd`); `card_text` may be partial.
+The default pack's overlay matches `board.json` word for word. Log and trade-message flavor in
+core goes through `board.term(...)`: `jail`, `bank`, `pardon`, `buys` ("claims"), `unowned`
+("unclaimed"), `player` / `players` ("commander(s)"); `tests/test_content_overlay.gd` plays a
+seeded game under the test fixture pack and checks that no default-pack word appears.

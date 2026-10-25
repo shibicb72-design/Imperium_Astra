@@ -130,7 +130,7 @@ func _show_draft() -> void:
 	var a := tc.players[_draft.from_id]
 	var b := tc.players[_draft.to_id]
 	if a.id == b.id:
-		_problem.text = "Pick two different commanders."
+		_problem.text = "Pick two different %s." % tc.board.term("players")
 		return
 	_add_side(a, true)
 	_body.add_child(HSeparator.new())

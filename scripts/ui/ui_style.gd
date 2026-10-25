@@ -83,6 +83,13 @@ static func reload_theme() -> void:
 	_theme = {}
 
 
+## Active pack's content overlay (its theme.json content_path, ContentOverlay shape), {} if none.
+## Main passes it to GameSetup.new_game() at match start; core never calls this.
+static func content_overlay() -> Dictionary:
+	var path := String(theme_data().get("content_path", ""))
+	return JsonData.load_json(path) if path != "" else {}
+
+
 static func color(key: String) -> Color:
 	var v: Variant = theme_data().get("colors", {}).get(key)
 	return Color.html(String(v)) if v is String and Color.html_is_valid(v) else MISSING_COLOR

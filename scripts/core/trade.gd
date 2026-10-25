@@ -43,13 +43,13 @@ static func propose(from_id: int, to_id: int) -> Offer:
 ## Empty string when the offer can be accepted as it stands, otherwise the first reason it cannot.
 static func validate(board: Board, players: Array[Player], offer: Offer, config: RulesConfig) -> String:
 	if offer.from_id == offer.to_id:
-		return "A commander cannot trade with themselves."
+		return "A %s cannot trade with themselves." % board.term("player")
 	if not _valid_id(players, offer.from_id) or not _valid_id(players, offer.to_id):
-		return "Unknown commander."
+		return "Unknown %s." % board.term("player")
 	var a := players[offer.from_id]
 	var b := players[offer.to_id]
 	if a.is_bankrupt or b.is_bankrupt:
-		return "Bankrupt commanders cannot trade."
+		return "Bankrupt %s cannot trade." % board.term("players")
 	if offer.is_empty():
 		return "The offer is empty."
 	if offer.give_cash < 0 or offer.get_cash < 0:
@@ -62,7 +62,8 @@ static func validate(board: Board, players: Array[Player], offer: Offer, config:
 	if not deed_error.is_empty():
 		return deed_error
 	if not _holds_cards(a, offer.give_cards) or not _holds_cards(b, offer.get_cards):
-		return "Pardon card not held."
+		var card := board.term("pardon")
+		return "%s not held." % (card.left(1).to_upper() + card.substr(1))
 	# Each side must be able to pay the transfer interest on mortgaged deeds it receives.
 	if a.cash - offer.give_cash + offer.get_cash < interest_due(board, offer.get_deeds, config):
 		return "%s cannot pay the mortgage interest." % a.display_name

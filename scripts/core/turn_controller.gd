@@ -149,7 +149,7 @@ func pay_jail_fine() -> bool:
 		return false
 	bank.collect(p, config.jail_fine)
 	_release(p)
-	_say("%s pays $%d and leaves the Brig." % [p.display_name, config.jail_fine])
+	_say("%s pays $%d and leaves %s." % [p.display_name, config.jail_fine, board.term("jail")])
 	_event(&"released", {"player": p.id, "how": &"fine"})
 	state_changed.emit()
 	return true
@@ -163,7 +163,7 @@ func use_get_out_of_jail_card() -> bool:
 	var card: Card = p.goojf_cards.pop_front()
 	_deck_for(card.deck_id).return_to_bottom(card)
 	_release(p)
-	_say("%s uses a pardon and leaves the Brig." % p.display_name)
+	_say("%s uses a %s and leaves %s." % [p.display_name, board.term("pardon"), board.term("jail")])
 	_event(&"released", {"player": p.id, "how": &"pardon"})
 	state_changed.emit()
 	return true
@@ -176,7 +176,7 @@ func buy() -> bool:
 	var deed := board.deed_at(pending_buy_index)
 	if not bank.sell_property(p, deed):
 		return false
-	_say("%s claims %s for $%d." % [p.display_name, board.spaces[pending_buy_index].display_name, deed.list_price])
+	_say("%s %s %s for $%d." % [p.display_name, board.term("buys"), board.spaces[pending_buy_index].display_name, deed.list_price])
 	_event(&"bought", {"player": p.id, "space": pending_buy_index, "price": deed.list_price})
 	pending_buy_index = -1
 	_continue()
@@ -248,7 +248,7 @@ func _after_auction_step() -> void:
 		# Cash was checked at bid time; anything spent since then becomes a debt to the Bank.
 		_charge(winner, PropertyDeed.BANK, a.high_bid)
 	else:
-		_say("No bids; %s stays with the Bank." % s.display_name)
+		_say("No bids; %s stays with %s." % [s.display_name, board.term("bank")])
 		_event(&"auction_unsold", {"space": s.index})
 	auction_ended.emit(a.space_index, a.high_bidder, a.high_bid)
 	_continue()
@@ -313,10 +313,10 @@ func _finish_building_auction(a: BuildingLotAuction) -> void:
 		else:
 			# TODO Q10: the winner's claim stopped being legal during bidding (e.g. they mortgaged a
 			# street of the set). Placeholder: no sale, no charge, the building goes back to the Bank.
-			_say("%s can no longer build on %s; the %s stays with the Bank." % [
-				winner.display_name, board.spaces[i].display_name, board.term(String(a.kind))])
+			_say("%s can no longer build on %s; the %s stays with %s." % [
+				winner.display_name, board.spaces[i].display_name, board.term(String(a.kind)), board.term("bank")])
 	else:
-		_say("No bids; the %s stays with the Bank." % board.term(String(a.kind)))
+		_say("No bids; the %s stays with %s." % [board.term(String(a.kind)), board.term("bank")])
 	if space < 0:
 		Building.return_lot(bank, a.kind)
 		_event(&"building_auction_unsold", {"kind": a.kind})
@@ -343,7 +343,7 @@ func build(player_id: int, space_index: int) -> bool:
 	var what := board.term("hotel") if deed.has_hotel else board.term("house")
 	_say("%s builds a %s on %s for $%d." % [p.display_name, what, board.spaces[space_index].display_name, cost])
 	if had_houses == Building.MAX_HOUSES:
-		_say("%d %s return to the Bank." % [Building.MAX_HOUSES, board.term("houses")])
+		_say("%d %s return to %s." % [Building.MAX_HOUSES, board.term("houses"), board.term("bank")])
 	_built_event(p, deed, cost)
 	state_changed.emit()
 	return true
@@ -564,7 +564,7 @@ func declare_bankruptcy() -> bool:
 	else:
 		var decks: Array[CardDeck] = [chance, community_chest]
 		_auction_queue.append_array(Bankruptcy.settle_to_bank(board, bank, debtor, decks))
-		_say("%s is bankrupt; holdings return to the Bank for auction." % debtor.display_name)
+		_say("%s is bankrupt; holdings return to %s for auction." % [debtor.display_name, board.term("bank")])
 	if debtor == current_player():
 		pending_buy_index = -1
 		_extra_turn_pending = false
@@ -608,7 +608,7 @@ func _pay(payer: Player, creditor_id: int, amount: int) -> void:
 
 
 func _creditor_name(creditor_id: int) -> String:
-	return "the Bank" if creditor_id == PropertyDeed.BANK else players[creditor_id].display_name
+	return board.term("bank") if creditor_id == PropertyDeed.BANK else players[creditor_id].display_name
 
 
 ## Next phase after any step: open debts, then auctions, then the buy decision, then end of landing.
@@ -681,12 +681,12 @@ func _roll_in_jail(p: Player) -> void:
 	if dice.is_doubles():
 		# 6.3 option 3: doubles free you; move with that roll; no extra turn.
 		_release(p)
-		_say("Doubles! %s leaves the Brig." % p.display_name)
+		_say("Doubles! %s leaves %s." % [p.display_name, board.term("jail")])
 		_event(&"released", {"player": p.id, "how": &"doubles"})
 	else:
 		p.jail_turns_tried += 1
 		if p.jail_turns_tried < config.max_jail_turns:
-			_say("%s stays in the Brig." % p.display_name)
+			_say("%s stays in %s." % [p.display_name, board.term("jail")])
 			return
 		# 6.4: third failed try: pay the fine and move with this roll.
 		_charge(p, PropertyDeed.BANK, config.jail_fine)
@@ -726,7 +726,7 @@ func _resolve_property(p: Player, s: Space, ctx: Dictionary) -> void:
 	if deed.owner == PropertyDeed.BANK:
 		pending_buy_index = s.index
 		phase = Phase.AWAITING_BUY_DECISION
-		_say("%s is unclaimed: $%d." % [s.display_name, deed.list_price])
+		_say("%s is %s: $%d." % [s.display_name, board.term("unowned"), deed.list_price])
 		_event(&"landed_unowned", {"player": p.id, "space": s.index, "price": deed.list_price})
 		return
 	if deed.owner == p.id or deed.is_mortgaged:
