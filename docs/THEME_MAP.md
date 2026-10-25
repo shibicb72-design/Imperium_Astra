@@ -2,7 +2,10 @@
 
 The theme is a data swap only. `space_type`, prices, rents, tax amounts and card opcodes in
 `data/*.json` are the classic US values (see `classic_monopoly_structure.md`) and stay fixed.
-Only `display_name`, group `display_name` / `color`, and card `text` are theme data.
+Only words and looks are theme data. A theme pack (`data/themes/<id>/`) swaps space, group and
+seat names, terms, optional card text, dialogue, colors and fonts (see "Pack content overlay"
+below). Group colors are display data too, but they live in the shared `data/board.json`
+`groups`. Changing them is a shared-data edit that applies to every pack; it is not pack data.
 Classic names appear here only, for traceability; they are not shipped in game data.
 
 ## Special spaces
@@ -55,11 +58,13 @@ board stays readable.
 | Bank | Imperial Treasury |
 | Railroad rent | Jump Gate toll |
 
-The house / hotel words used in game log text come from `data/board.json` `terms`
-(`house`, `houses`, `hotel`), so a theme pack swaps them as data. The deck names shown on
-pardon cards in the Trade panel come from the same `terms` (`chance`, `community_chest`, keyed by
-the stable deck id). UI wording also comes from `terms` (P1-UI): `jail` ("the Brig"),
-`jail_fine` ("Brig fine"), `buy` ("Claim"), `pardon` ("Pardon card"), `bank` ("the Treasury").
+The house / hotel words used in game log text are `terms` (`house`, `houses`, `hotel`). The
+deck names shown on pardon cards in the Trade panel are terms too (`chance`, `community_chest`,
+keyed by the stable deck id), and so is UI wording (P1-UI): `jail` ("the Brig"), `jail_fine`
+("Brig fine"), `buy` ("Claim"), `pardon` ("Pardon card"), `bank` ("the Treasury").
+`data/board.json` `terms` holds the shared words. At match start the active pack's `content.json`
+overlay replaces them (see "Pack content overlay" below). The words quoted here are the default
+pack's.
 
 Each space may also carry a `short_name` (compact board label, e.g. "Mercurii Gate"); it falls
 back to `display_name` and is display data only, like `display_name`.
@@ -68,14 +73,20 @@ Currency is shown as `$` for now (see OPEN_QUESTIONS.md Q2).
 
 ## Visual theme pack (P3-THEME)
 
-Names live in `data/board.json`; the look lives in `data/themes/<id>/theme.json`, picked by
-`data/ui.json` `theme_path` (default `imperium_astra`). The pack holds colors (navy panels, gold
-accent, ivory button text), button / panel StyleBox sizes, board chrome (group bar height, gold
-frame, corner tints and marks keyed by the stable `space_type` name: Launch Bay green-gold,
-Brig and Report to the Brig deep red) and the procedural starfield settings. It never holds
-`space_type` values, prices, rents or card opcodes (`tests/test_theme.gd` checks this). A new
-theme copies the folder, edits the colors, and points `theme_path` at it; the colour-group colors
-themselves stay in `board.json` `groups`. Open style points: OPEN_QUESTIONS.md Q20.
+The look lives in `data/themes/<id>/theme.json`. It holds colors (navy panels, gold accent,
+ivory button text), button / panel StyleBox sizes, board chrome (group bar height, gold frame,
+corner tints and marks keyed by the stable `space_type` name: Launch Bay green-gold, Brig and
+Report to the Brig deep red), the procedural starfield settings and, since Track B, the display
+font (`display_font_path`). It never holds `space_type` values, prices, rents or card opcodes
+(`tests/test_theme.gd` checks the key names). Space, group and seat names and terms do not come
+from `theme.json`: they come from the
+pack's content overlay (`content_path`, see "Pack content overlay" below), and
+`data/board.json` keeps only the shared fallback names. `data/ui.json` `theme_path` names the
+shipped default pack (`imperium_astra`) and stays that way. Packs are registered in
+`data/themes/index.json` and picked per session (next section). A new theme is a pack folder
+(`theme.json`, `dialogue.json`, `content.json`) plus one index entry. It does not repoint
+`theme_path`. The colour-group colors themselves stay in the shared `board.json` `groups`. Open
+style points: OPEN_QUESTIONS.md Q20.
 
 ### Switching packs (P5-FEEL A4)
 
@@ -90,7 +101,7 @@ folder and one index entry. Covered by `tests/test_theme_switch.gd`.
 
 ### Pack content overlay (P5-FEEL A5 / A6)
 
-Each pack's `theme.json` names a `content_path` (e.g. `data/themes/imperium_astra/content.json`)
+Each pack's `theme.json` names a `content_path` (e.g. `res://data/themes/imperium_astra/content.json`)
 holding the pack's words. `Main.begin_match` reads it via `UiStyle.content_overlay()` and passes it
 to `GameSetup.new_game(seed, seats, content)`, which applies it once at match start
 (`scripts/core/content_overlay.gd`); core never reads `UiStyle` or `data/ui.json`. The setup
@@ -111,8 +122,27 @@ Prices, rents, space types, opcodes and group colors never appear in a pack (one
 `rules.json` / `board.json` / `cards.json`). Every registered pack's overlay must name every term,
 space, group and seat so no default-pack word leaks through them (`tests/test_theme.gd`);
 `card_text` is optional per card, and a card a pack leaves out keeps the shared `cards.json` text,
-which uses the default pack's words. The default pack's overlay matches `board.json` and the
+which uses the default pack's words. That is the one intentional leak left: `astra_alt`
+ships no `card_text` and accepts it. The default pack's overlay matches `board.json` and the
 `rules.json` `seat_pool` names word for word. Log and trade-message flavor in
 core goes through `board.term(...)`: `jail`, `bank`, `pardon`, `buys` ("claims"), `unowned`
 ("unclaimed"), `player` / `players` ("commander(s)"); `tests/test_content_overlay.gd` plays a
 seeded game under the test fixture pack and checks that no default-pack word appears.
+
+### Articles around pack terms (P5-FEEL Dig 4)
+
+Core templates put an article in front of some terms and not others, so pick pack words to fit:
+
+| Term | Core template | Pack word |
+|---|---|---|
+| `jail`, `bank` | "leaves %s", "stays in %s", "stays with %s", "return to %s" (`turn_controller.gd:152, 251, 347, 685, 690`) | carries its own article ("the Brig", "the Treasury") |
+| `pardon` | "uses a %s" (`turn_controller.gd:166`) | follows "a", so it needs a consonant sound |
+| `player` | "A %s cannot trade with themselves." (`trade.gd:46`) | follows "A", so it needs a consonant sound |
+| `house`, `hotel` | "wins the %s", "the %s stays with %s" (building-lot auction, `turn_controller.gd:307, 316, 319`); "builds 1 %s", "sells 1 %s" (`:345, 363`) | no article of its own; any first letter works |
+| `buys`, `unowned` | "%s %s %s for $%d." (`:179`), "%s is %s: $%d." (`:730`) | a verb ("claims") and an adjective ("unclaimed"); the space readout shows `unowned` in sentence case |
+
+Before Dig 4a the build / sell lines said "builds a %s" / "sells a %s", so the default pack's
+`house` word logged "builds a outpost module". Dig 4a reworded them to "1 %s"
+(`tests/test_content_overlay.gd` `test_build_and_sell_lines_take_no_article`). Since then both
+shipped packs fit the table: the default pack uses "Pardon card", "commander", "the Brig" and
+"the Treasury"; `astra_alt` uses "Release card", "pilot", "the Hold" and "the Reserve".

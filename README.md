@@ -4,7 +4,7 @@ A property-trading board game with the classic Hasbro rules structure (C1009 / G
 `docs/classic_monopoly_structure.md`) and a Roman space-empire theme. Godot 4.7.2, GDScript.
 No trademarked names, art or logos are used; the theme is a pure data swap (`docs/THEME_MAP.md`).
 
-## Status (P1)
+## Status (P1 to P5-FEEL)
 
 - Rules core (`scripts/core/`): Board, Space, PropertyDeed, Player, Bank, Dice, CardDeck, Card,
   TurnController, pure `Rules` functions. All numbers live in `data/*.json`.
@@ -46,6 +46,15 @@ No trademarked names, art or logos are used; the theme is a pure data swap (`doc
   out rolls, landings, rent, tax, cards, jail, trades and bankruptcy. Lines are theme data
   (`data/themes/<id>/dialogue.json`); the rules only emit `TurnController.game_event` (ids and
   numbers, no text). Timings in `data/ui.json`.
+- P5-FEEL feel and theme switching (`docs/IMPERIUM_ASTRA_P5_FEEL_REPORT.md`). Build / sell
+  `game_event` hooks plus a Node2D piece contract (dig 2), with original explorer pieces that hop,
+  pop on builds and fade on bankruptcy (Track B). Theme packs are registered in
+  `data/themes/index.json` (`imperium_astra`, `astra_alt`) and picked on the setup screen for the
+  current session only (dig 3a, Track B). Each pack's mandatory `content.json` overlay supplies
+  terms and space, group and seat names at match start; card text is optional (digs 3b-3c). Titles
+  use the Orbitron OFL display font (`docs/ATTRIBUTION.md`). Dig 4 fixed overlay edge cases and the
+  test teardown ERROR noise, and wrote the phase docs. Still to do: the Fold prove and the B6
+  device timing pass.
 - Play mode: **local hotseat, 2-4 seats** (one device). The Holdings panel lets
   any commander build / sell / mortgage at any time, and the Trade panel lets any two active
   commanders trade at any time (also off-turn, in the Brig, or while raising funds), as the
