@@ -6,6 +6,9 @@ extends RefCounted
 
 const MAX_HOUSES := 4
 const HOTEL_LEVEL := 5
+## Building lot kinds (ids, also the board.json term keys).
+const HOUSE := &"house"
+const HOTEL := &"hotel"
 
 
 static func level(deed: PropertyDeed) -> int:
@@ -30,7 +33,15 @@ static func group_has_buildings(board: Board, group_id: StringName) -> bool:
 ## Needs the full color set, no mortgaged street in it, even building (this street may not get
 ## ahead of the lowest one), Bank stock and cash.
 static func can_build(board: Board, bank: Bank, player: Player, deed: PropertyDeed) -> bool:
-	if player.is_bankrupt or deed.owner != player.id or not board.color_groups.has(deed.color_group_id):
+	if not can_place(board, player, deed):
+		return false
+	return stock(bank, next_kind(deed)) > 0 and player.cash >= next_cost(deed)
+
+
+## The next building on this street is legal (full set, none mortgaged, even building), not
+## counting Bank stock or cash. A shortage-auction claim must pass this.
+static func can_place(board: Board, player: Player, deed: PropertyDeed) -> bool:
+	if deed == null or player.is_bankrupt or deed.owner != player.id or not board.color_groups.has(deed.color_group_id):
 		return false
 	if not board.owns_full_group(player.id, deed.color_group_id):
 		return false
@@ -40,30 +51,76 @@ static func can_build(board: Board, bank: Bank, player: Player, deed: PropertyDe
 			return false
 		lowest = mini(lowest, level(d))
 	var lv := level(deed)
-	if lv >= HOTEL_LEVEL or lv > lowest:
-		return false
-	if lv == MAX_HOUSES:
-		return bank.hotels_remaining > 0 and player.cash >= deed.hotel_cost
-	return bank.houses_remaining > 0 and player.cash >= deed.house_cost
+	return lv < HOTEL_LEVEL and lv <= lowest
 
 
 ## Returns the price paid, or -1 if not allowed.
 static func build(board: Board, bank: Bank, player: Player, deed: PropertyDeed) -> int:
 	if not can_build(board, bank, player, deed):
 		return -1
-	var cost: int
-	if deed.houses == MAX_HOUSES:
-		cost = deed.hotel_cost
+	var kind := next_kind(deed)
+	var cost := next_cost(deed)
+	take_lot(bank, kind)
+	place_lot(board, bank, player, deed, kind)
+	bank.collect(player, cost)
+	return cost
+
+
+# --- Building lots (shortage auction, docs/classic_monopoly_structure.md 3.2, Q10) -----------
+
+## Kind of the next building on this street: HOUSE, or HOTEL on a 4-house street.
+static func next_kind(deed: PropertyDeed) -> StringName:
+	return HOTEL if deed.houses == MAX_HOUSES else HOUSE
+
+
+## List cost of the next building on this street.
+static func next_cost(deed: PropertyDeed) -> int:
+	return deed.hotel_cost if next_kind(deed) == HOTEL else deed.house_cost
+
+
+static func stock(bank: Bank, kind: StringName) -> int:
+	return bank.hotels_remaining if kind == HOTEL else bank.houses_remaining
+
+
+## Official shortage: the Bank has some of this kind left but fewer than the players who want
+## one, so it auctions them. With enough stock (or none) building stays first come, first served.
+static func is_contested(bank: Bank, kind: StringName, claimants: int) -> bool:
+	var left := stock(bank, kind)
+	return claimants >= 2 and left > 0 and claimants > left
+
+
+## Takes one building of `kind` out of Bank stock (for a build or a running lot auction).
+## False, and nothing changes, if the Bank has none: stock never goes negative.
+static func take_lot(bank: Bank, kind: StringName) -> bool:
+	if stock(bank, kind) <= 0:
+		return false
+	if kind == HOTEL:
 		bank.hotels_remaining -= 1
+	else:
+		bank.houses_remaining -= 1
+	return true
+
+
+## Puts a building taken by take_lot() back into Bank stock (unsold lot).
+static func return_lot(bank: Bank, kind: StringName) -> void:
+	if kind == HOTEL:
+		bank.hotels_remaining += 1
+	else:
+		bank.houses_remaining += 1
+
+
+## Places a building already taken out of stock on this street, under the normal placement rules
+## (a hotel sends its 4 houses back to the Bank). No payment here. False if not legal now.
+static func place_lot(board: Board, bank: Bank, player: Player, deed: PropertyDeed, kind: StringName) -> bool:
+	if not can_place(board, player, deed) or next_kind(deed) != kind:
+		return false
+	if kind == HOTEL:
 		bank.houses_remaining += MAX_HOUSES
 		deed.houses = 0
 		deed.has_hotel = true
 	else:
-		cost = deed.house_cost
-		bank.houses_remaining -= 1
 		deed.houses += 1
-	bank.collect(player, cost)
-	return cost
+	return true
 
 
 static func sell_value(cost: int, config: RulesConfig) -> int:

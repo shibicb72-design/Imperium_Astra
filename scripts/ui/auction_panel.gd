@@ -45,13 +45,19 @@ func refresh() -> void:
 	UiFx.set_shown(self, shown)  # short fade in / out (instant in headless tests)
 	if not shown:
 		return
-	var s := _controller.board.spaces[a.space_index]
+	var board := _controller.board
 	var bidder := _controller.players[a.current_bidder()]
+	var lot: String
+	if a.is_building_lot():  # building shortage (Q10): one house / hotel, each bidder's own street
+		var la := a as BuildingLotAuction
+		lot = "one %s for %s" % [board.term(String(la.kind)), board.spaces[la.claim_of(bidder.id)].display_name]
+	else:
+		lot = board.spaces[a.space_index].display_name
 	var high := "No bids yet (opening $%d)" % a.min_bid
 	if a.has_winner():
 		high = "High bid $%d by %s" % [a.high_bid, _controller.players[a.high_bidder].display_name]
 	_info.text = "Auction: %s (list $%d)\n%s\n%s to bid (cash $%d)" % [
-		s.display_name, s.deed.list_price, high, bidder.display_name, bidder.cash]
+		lot, a.list_price_for(board, bidder.id), high, bidder.display_name, bidder.cash]
 	var last := -1
 	for i in _bid_buttons.size():
 		var amount := _bid_amount(i)

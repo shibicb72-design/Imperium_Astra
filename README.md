@@ -24,7 +24,11 @@ No trademarked names, art or logos are used; the theme is a pure data swap (`doc
     color set has buildings. The receiver of a mortgaged deed pays the Bank 10% of its mortgage
     value at once and keeps the mortgage; a trade whose interest a side cannot pay is refused.
   - `TurnController` only sequences them (debts -> auctions -> buy decision -> end of landing).
-- Not yet: building-shortage auctions. See `docs/OPEN_QUESTIONS.md`.
+- Building-shortage auction (P5-FEEL dig 1): `building_lot_auction.gd` is the non-deed `Auction`
+  variant for one Bank house/hotel; `TurnController.start_building_auction(claims)` runs it when
+  legal claimants outnumber Bank stock (winner pays the bid, builds on their claimed street).
+  Not wired into play yet: how players claim a building is OPEN_QUESTIONS Q10 `_placeholder`, so
+  building stays first come, first served.
 - P2 bots (`bot.gd`, `data/bot.json`): optional AI seats (`Player.is_bot`). `Bot.decide()` only
   reads the match and returns one action; `TurnController.bot_step()` applies it through the same
   public actions people use, so bots follow every rule check. The UI plays bot steps on a timer

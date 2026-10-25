@@ -25,6 +25,16 @@ func _init(p_space_index: int, bidder_ids: Array[int], p_min_bid: int, p_increme
 	increment = maxi(1, p_increment)
 
 
+## False for a deed auction; BuildingLotAuction (Bank building shortage) overrides it.
+func is_building_lot() -> bool:
+	return false
+
+
+## List price of what is up for auction, as seen by this bidder (bots cap their bids on it).
+func list_price_for(board: Board, _player_id: int) -> int:
+	return board.deed_at(space_index).list_price
+
+
 func is_finished() -> bool:
 	return _active.is_empty() or (_active.size() == 1 and _active[0] == high_bidder)
 

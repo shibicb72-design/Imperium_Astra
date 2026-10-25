@@ -31,7 +31,8 @@ extends RefCounted
 ## landed_unowned {player, space, price}, bought {player, space, price}, rent {player, owner,
 ## space, amount}, tax {player, space, amount}, card {player, space, deck, text}, jailed {player,
 ## from, to}, released {player, how: fine|pardon|doubles|forced}, auction_won {player, space,
-## amount}, auction_unsold {space}, bankrupt {player, creditor}, trade_proposed / trade_accepted /
+## amount}, auction_unsold {space}, building_auction_won {player, space, kind, amount},
+## building_auction_unsold {kind}, bankrupt {player, creditor}, trade_proposed / trade_accepted /
 ## trade_rejected / trade_countered / trade_withdrawn {player, other}, game_over {player}.
 
 signal turn_started(player: Player)
@@ -42,6 +43,10 @@ signal rent_requested(owner: Player, payer: Player, amount: int)
 signal winner_declared(player: Player)
 signal auction_started(space_index: int)
 signal auction_ended(space_index: int, winner_id: int, amount: int)
+## Building shortage auction (BuildingLotAuction); kind is Building.HOUSE / Building.HOTEL.
+signal building_auction_started(kind: StringName)
+## space_index is where it was built, or -1 (and winner_id Auction.NO_BIDDER) if unsold.
+signal building_auction_ended(kind: StringName, space_index: int, winner_id: int, amount: int)
 signal debt_started(debtor: Player, creditor_id: int, amount: int)
 signal player_bankrupt(player: Player, creditor_id: int)
 signal trade_proposed(offer: Trade.Offer)
@@ -80,6 +85,8 @@ var bot_proposed_this_turn := false
 
 var _extra_turn_pending := false
 var _auction_queue: Array[int] = []
+## A building shortage auction interrupted AWAITING_ROLL; return there once it is settled.
+var _resume_roll := false
 
 
 func current_player() -> Player:
@@ -224,6 +231,9 @@ func _after_auction_step() -> void:
 		return
 	var a := auction
 	auction = null
+	if a.is_building_lot():
+		_finish_building_auction(a as BuildingLotAuction)
+		return
 	var s := board.spaces[a.space_index]
 	if a.has_winner():
 		var winner := players[a.high_bidder]
@@ -236,6 +246,75 @@ func _after_auction_step() -> void:
 		_say("No bids; %s stays with the Bank." % s.display_name)
 		_event(&"auction_unsold", {"space": s.index})
 	auction_ended.emit(a.space_index, a.high_bidder, a.high_bid)
+	_continue()
+
+
+## Building shortage (3.2, OFFICIAL): when several players want more houses / hotels than the Bank
+## has, it auctions them from auction_min_bid. `claims` maps each claimant id to the street they
+## would build on; every claim must be a legal next building of the same kind, and there must be
+## more claimants than Bank stock of that kind (Building.is_contested). One building per auction,
+## held out of stock while bidding runs; bidders in seat order left of the current player (as Q3).
+## Otherwise returns false and build() stays first come, first served.
+## Q10 `_placeholder`: nothing in the game calls this yet. Who counts as wanting a building (claim
+## window, how people and bots declare interest) is Shibi's call; see docs/OPEN_QUESTIONS.md Q10.
+func start_building_auction(claims: Dictionary[int, int]) -> bool:
+	if auction != null or not pending_debts.is_empty():
+		return false
+	if phase not in [Phase.AWAITING_ROLL, Phase.AWAITING_BUY_DECISION, Phase.AWAITING_END_TURN]:
+		return false
+	var kind := &""
+	for pid: int in claims:
+		var i: int = claims[pid]
+		if not can_manage(pid) or i < 0 or i >= board.spaces.size():
+			return false
+		var deed := board.deed_at(i)
+		if not Building.can_place(board, players[pid], deed):
+			return false
+		var k := Building.next_kind(deed)
+		if kind != &"" and k != kind:
+			return false
+		kind = k
+	if not Building.is_contested(bank, kind, claims.size()):
+		return false
+	var bidders: Array[int] = []
+	for step in range(1, players.size() + 1):
+		var id := (current_index + step) % players.size()
+		if claims.has(id):
+			bidders.append(id)
+	Building.take_lot(bank, kind)
+	if phase == Phase.AWAITING_ROLL:
+		_resume_roll = true
+	auction = BuildingLotAuction.new(kind, claims, bidders, config.auction_min_bid, config.auction_increment)
+	_say("%s shortage: one %s goes to auction, bids from $%d." % [
+		board.term(String(kind)).capitalize(), board.term(String(kind)), config.auction_min_bid])
+	building_auction_started.emit(kind)
+	_continue()
+	return true
+
+
+func _finish_building_auction(a: BuildingLotAuction) -> void:
+	var space := -1
+	if a.has_winner():
+		var winner := players[a.high_bidder]
+		var i := a.claim_of(winner.id)
+		if Building.place_lot(board, bank, winner, board.deed_at(i), a.kind):
+			space = i
+			_say("%s wins the %s for $%d and builds on %s." % [
+				winner.display_name, board.term(String(a.kind)), a.high_bid, board.spaces[i].display_name])
+			_event(&"building_auction_won", {"player": winner.id, "space": i, "kind": a.kind, "amount": a.high_bid})
+			# As with deeds: cash was checked at bid time; any shortfall becomes a debt to the Bank.
+			_charge(winner, PropertyDeed.BANK, a.high_bid)
+		else:
+			# TODO Q10: the winner's claim stopped being legal during bidding (e.g. they mortgaged a
+			# street of the set). Placeholder: no sale, no charge, the building goes back to the Bank.
+			_say("%s can no longer build on %s; the %s stays with the Bank." % [
+				winner.display_name, board.spaces[i].display_name, board.term(String(a.kind))])
+	else:
+		_say("No bids; the %s stays with the Bank." % board.term(String(a.kind)))
+	if space < 0:
+		Building.return_lot(bank, a.kind)
+		_event(&"building_auction_unsold", {"kind": a.kind})
+	building_auction_ended.emit(a.kind, space, a.high_bidder if space >= 0 else Auction.NO_BIDDER, a.high_bid if space >= 0 else 0)
 	_continue()
 
 
@@ -521,6 +600,13 @@ func _continue() -> void:
 		phase = Phase.AWAITING_BUY_DECISION
 		state_changed.emit()
 		return
+	if _resume_roll:
+		_resume_roll = false
+		if not current_player().is_bankrupt:
+			phase = Phase.AWAITING_ROLL
+			_check_winner()
+			state_changed.emit()
+			return
 	_post_landing()
 
 

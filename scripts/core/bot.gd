@@ -113,9 +113,10 @@ static func _jail(tc: TurnController, p: Player, s: Settings) -> Action:
 	return Action.new(Kind.ROLL, p.id)
 
 
-## Highest bid this bot will make on the running auction's deed.
+## Highest bid this bot will make on the running auction's deed (or, in a building shortage
+## auction, its building: same rule on the building's list cost; Q10 / Q18 placeholder).
 static func auction_limit(tc: TurnController, p: Player, s: Settings) -> int:
-	var price := tc.board.deed_at(tc.auction.space_index).list_price
+	var price := tc.auction.list_price_for(tc.board, p.id)
 	return mini(p.cash - s.cash_buffer, int(price * s.auction_max_price_percent / 100.0))
 
 
