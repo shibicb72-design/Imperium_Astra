@@ -150,6 +150,12 @@ static func picker(parent: Control) -> OptionButton:
 	return o
 
 
+## Opaque backing for the tabbed section area (Holdings / Trade / Log): theme panel color.
+static func section_style() -> StyleBoxFlat:
+	return flat_box(color("panel"), color("panel_border"), int(theme_num("panel", "border_width", 1)),
+			int(theme_num("panel", "corner_radius", 8)), theme_num("panel", "content_margin", 8))
+
+
 ## Panel background used for banners and deed cards: theme panel color, thin border, thick
 ## accent bar on the left. No accent: the theme's panel_border.
 static func card_style(accent: Color = Color.TRANSPARENT) -> StyleBoxFlat:

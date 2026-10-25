@@ -2,7 +2,8 @@ class_name Main
 extends Control
 ## Local hotseat match screen. BoardView plus a control column: turn header, player cash chips,
 ## status line, the turn action buttons (only the ones that apply), pinned Auction / Debt
-## banners, then tabbed sections (Holdings, Trade, Log) filling the rest. Board above the column
+## banners, then tabbed sections (Holdings, Trade, Log) filling the rest on an opaque panel;
+## tapping the open tab collapses them (debt and trade offers reopen theirs). Board above the column
 ## in portrait (phones, folded Fold), beside it in landscape; the board takes at most a data/ui.json
 ## share of the long side so controls keep room. One canvas unit is about 1 dp on mobile
 ## (DisplayScale). Input comes from touch/mouse buttons or InputMap actions only (roll_dice,
@@ -44,6 +45,8 @@ var _debt_panel: DebtPanel
 var _tab_buttons: Array[Button] = []
 var _sections: Array[Control] = []
 var _section: Section = Section.HOLDINGS
+var _sections_open := true
+var _section_holder: PanelContainer
 var _holdings_panel: HoldingsPanel
 var _trade_panel: TradePanel
 var _log_label: Label
@@ -207,17 +210,21 @@ func _build_ui() -> void:
 	var tabs := HBoxContainer.new()
 	tabs.add_theme_constant_override("separation", 4)
 	side.add_child(tabs)
-	var group := ButtonGroup.new()
+	# No ButtonGroup: tapping the open tab again collapses the sections (toggle_tab).
 	for i in SECTION_NAMES.size():
-		var b := UiStyle.button(tabs, SECTION_NAMES[i], show_section.bind(i))
+		var b := UiStyle.button(tabs, SECTION_NAMES[i], toggle_tab.bind(i))
 		b.toggle_mode = true
-		b.button_group = group
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_tab_buttons.append(b)
 
+	# Opaque, clipped backing so nothing behind the sections shows through.
+	_section_holder = PanelContainer.new()
+	_section_holder.add_theme_stylebox_override("panel", UiStyle.section_style())
+	_section_holder.clip_contents = true
+	_section_holder.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	side.add_child(_section_holder)
 	var holder := VBoxContainer.new()
-	holder.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	side.add_child(holder)
+	_section_holder.add_child(holder)
 	_holdings_panel = HoldingsPanel.new()
 	_holdings_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_holdings_panel.setup(controller)
@@ -251,16 +258,42 @@ func _wrap_scroll(parent: Control, content: Control) -> ScrollContainer:
 	return scroll
 
 
+## Opens a section (always; debt and trade offers force their section open).
 func show_section(section: int) -> void:
-	if section != _section:
-		UiFx.fade_in(_sections[section], UiStyle.num("panel_fade_seconds", 0.18))
+	if section != _section or not _sections_open:
+		UiFx.fade_in(_section_holder if not _sections_open else _sections[section],
+			UiStyle.num("panel_fade_seconds", 0.18))
 	_section = section as Section
+	_sections_open = true
+	_section_holder.visible = true
 	for i in _sections.size():
 		_sections[i].visible = i == section
 		_tab_buttons[i].set_pressed_no_signal(i == section)
 	if _section == Section.TRADE:
 		_trade_panel.refresh()
 	_update_layout()
+
+
+## Tab tap: the open tab collapses the sections; any other tab opens its section.
+func toggle_tab(section: int) -> void:
+	if _sections_open and section == _section:
+		collapse_sections()
+	else:
+		show_section(section)
+
+
+## Hides the section area so the board gets the room back; no tab stays selected.
+func collapse_sections() -> void:
+	_sections_open = false
+	_holdings_panel.close_picker()
+	_section_holder.visible = false
+	for b in _tab_buttons:
+		b.set_pressed_no_signal(false)
+	_update_layout()
+
+
+func sections_open() -> bool:
+	return _sections_open
 
 
 ## Margins = screen margin + safe-area insets, re-read on every layout so rotation moves them.

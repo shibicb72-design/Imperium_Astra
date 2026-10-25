@@ -17,9 +17,14 @@ func setup(controller: TurnController) -> void:
 	add_theme_constant_override("separation", 8)
 	var top := HBoxContainer.new()
 	add_child(top)
-	UiStyle.label(top, "Acting:", "body")
+	# No autowrap: a wrapping label in an HBox shrinks to one letter per line and stretches the
+	# picker into a tall box (Fold cover bug).
+	var acting := UiStyle.label(top, "Acting:", "body")
+	acting.autowrap_mode = TextServer.AUTOWRAP_OFF
+	acting.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_actor_picker = UiStyle.picker(top)
 	_actor_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_actor_picker.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	for p in controller.players:
 		_actor_picker.add_item(p.display_name, p.id)
 	_actor_picker.item_selected.connect(_on_actor_selected)
@@ -38,6 +43,11 @@ func set_actor(player_id: int) -> void:
 	_actor_id = player_id
 	_actor_picker.select(_actor_picker.get_item_index(player_id))
 	refresh()
+
+
+## Closes the actor dropdown if it is open (the section is being collapsed).
+func close_picker() -> void:
+	_actor_picker.get_popup().hide()
 
 
 func actor_id() -> int:

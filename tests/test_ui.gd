@@ -221,3 +221,36 @@ func test_main_pinned_rows_fit_short_portrait() -> void:
 	check(not _inside_scroll(main._actions), "turn actions not in a scroll")
 	main.free()
 	done()
+
+
+## Fold bugfix: sections sit on an opaque panel, the open tab collapses them, debt reopens Holdings.
+func test_main_sections_opaque_and_collapsible() -> void:
+	var main: Main = load("res://scenes/main.tscn").instantiate()
+	main.controller = _game()
+	main.start(null)
+	main.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	main.size = Vector2(411, 880)
+	main._update_layout()
+	var sb := main._section_holder.get_theme_stylebox("panel") as StyleBoxFlat
+	check(sb != null and sb.draw_center and is_equal_approx(sb.bg_color.a, 1.0), "section backing opaque")
+	check(main._section_holder.clip_contents, "section area clips")
+	var acting := main._holdings_panel.get_child(0).get_child(0) as Label
+	check_eq(acting.autowrap_mode, TextServer.AUTOWRAP_OFF, "Acting label does not wrap")
+	check(main.sections_open(), "holdings open at start")
+	main.toggle_tab(Main.Section.HOLDINGS)
+	check(not main.sections_open(), "tapping the open tab collapses")
+	check(not main._section_holder.visible, "section area hidden")
+	check(main._tab_buttons.all(func(b: Button) -> bool: return not b.button_pressed), "no tab selected")
+	main.toggle_tab(Main.Section.LOG)
+	check(main.sections_open() and main._section == Main.Section.LOG, "another tab opens")
+	check(main._tab_buttons[Main.Section.LOG].button_pressed, "log tab selected")
+	main.toggle_tab(Main.Section.TRADE)
+	check_eq(main._section, Main.Section.TRADE, "switching tabs keeps sections open")
+	main.toggle_tab(Main.Section.TRADE)
+	check(not main.sections_open(), "trade tab collapses too")
+	var debtor := main.controller.players[1]
+	main._on_debt_started(debtor, 0, 10)
+	check(main.sections_open() and main._section == Main.Section.HOLDINGS, "debt force-opens holdings")
+	check_eq(main._holdings_panel.actor_id(), debtor.id, "debtor is the holdings actor")
+	main.free()
+	done()
