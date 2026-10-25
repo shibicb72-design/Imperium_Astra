@@ -1,4 +1,14 @@
 {
-  "_doc": "Presentation tunables only (no rule numbers). auction_quick_bid_steps: raise amounts shown as buttons in the auction panel; the minimum legal bid always comes from rules.json.",
-  "auction_quick_bid_steps": [1, 10, 50, 100]
+  "_doc": "Presentation tunables only (no rule numbers). Sizes are canvas units, about 1 dp on phones and tablets (scripts/platform/display_scale.gd). auction_quick_bid_steps: raise amounts shown as buttons in the auction panel; the minimum legal bid always comes from rules.json. board_max_share_*: largest share of the screen's long side the board may take, so the controls keep room. trade_cash_steps: +/- buttons beside the trade cash fields.",
+  "auction_quick_bid_steps": [1, 10, 50, 100],
+  "touch_target": 48,
+  "font_small": 14,
+  "font_body": 16,
+  "font_button": 18,
+  "font_title": 20,
+  "screen_margin": 8,
+  "board_max_share_portrait": 0.48,
+  "board_max_share_landscape": 0.58,
+  "trade_cash_steps": [10, 100],
+  "log_lines_shown": 60
 }

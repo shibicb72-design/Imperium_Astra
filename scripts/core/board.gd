@@ -44,6 +44,7 @@ static func _space_from_dict(sd: Dictionary) -> Space:
 	s.index = int(sd["index"])
 	s.space_type = Space.type_from_string(String(sd["space_type"]))
 	s.display_name = String(sd["display_name"])
+	s.short_name = String(sd.get("short_name", s.display_name))
 	s.color_group_id = StringName(sd.get("color_group_id", ""))
 	s.list_price = int(sd.get("list_price", 0))
 	s.tax_amount = int(sd.get("tax_amount", 0))

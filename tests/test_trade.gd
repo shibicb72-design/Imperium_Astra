@@ -181,10 +181,7 @@ func test_trade_panel_hotseat_flow() -> void:
 	panel._send_button.pressed.emit()
 	check(tc.trade_offer != null, "offer open")
 	panel.refresh()
-	var accept: Button = null
-	for row in panel._body.get_children():
-		if row is HFlowContainer:
-			accept = row.get_child(0) as Button
+	var accept := panel._actions.get_child(0) as Button  # pinned action row, outside the scroll
 	check(accept != null and accept.text.begins_with("Accept"), "accept button shown")
 	if accept != null:
 		accept.pressed.emit()

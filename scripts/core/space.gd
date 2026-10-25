@@ -1,6 +1,7 @@
 class_name Space
 extends RefCounted
-## One of the 40 board spaces (layout from data/board.json). Only display_name is theme data.
+## One of the 40 board spaces (layout from data/board.json). Only display_name and short_name
+## (compact board label, defaults to display_name) are theme data.
 
 enum Type {
 	GO, JAIL_CORNER, FREE_PARKING, GO_TO_JAIL, CHANCE, COMMUNITY_CHEST,
@@ -10,6 +11,7 @@ enum Type {
 var index: int = 0
 var space_type: Type = Type.GO
 var display_name: String = ""
+var short_name: String = ""
 var color_group_id: StringName = &""
 var list_price: int = 0
 var tax_amount: int = 0

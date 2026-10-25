@@ -58,6 +58,10 @@ board stays readable.
 The house / hotel words used in game log text come from `data/board.json` `terms`
 (`house`, `houses`, `hotel`), so a theme pack swaps them as data. The deck names shown on
 pardon cards in the Trade panel come from the same `terms` (`chance`, `community_chest`, keyed by
-the stable deck id).
+the stable deck id). UI wording also comes from `terms` (P1-UI): `jail` ("the Brig"),
+`jail_fine` ("Brig fine"), `buy` ("Claim"), `pardon` ("Pardon card"), `bank` ("the Treasury").
+
+Each space may also carry a `short_name` (compact board label, e.g. "Mercurii Gate"); it falls
+back to `display_name` and is display data only, like `display_name`.
 
 Currency is shown as `$` for now (see OPEN_QUESTIONS.md Q2).

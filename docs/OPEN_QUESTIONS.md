@@ -15,6 +15,8 @@ Undecided product points. Placeholders are marked `_placeholder` / `TODO` in dat
 | Q10 | Building shortage: official auctions the last houses/hotels when several players want them. | Not implemented; first come, first served |
 | Q11 | Several debts from one card (e.g. pay each player) and the debtor goes bankrupt partway. | Debts are settled oldest first; bankruptcy goes to the creditor being paid then, later debts of that player are dropped (INFERRED) |
 | Q12 | Hotseat "any time" actions: any commander can pick themselves in the Holdings panel at any moment. OK, or limit to own turn + debts? | Any commander, any phase except game over; jail never blocks them. Rules side confirmed and tested in P1-PHASE (`tests/test_phase.gd`); the hotseat UX question stays open |
+| Q16 | UI scale off mobile: desktop and web stay at 1.0 (one canvas unit = one pixel). Scale by monitor DPI / browser devicePixelRatio later? | `DisplayScale` scales only Android/iOS (dpi / 160); no-op elsewhere (P1-UI) |
+| Q17 | Hotseat privacy: everyone sees every commander's cash and offers on one screen. Hide the receiver's view / add a "pass the device" screen? | Everything visible (P1-UI) |
 | Q5 | Rent "ask" window (owner must ask before next roll). Keep auto-ask for local play? | Auto-ask (rent always collected) |
 | Q6 | Card text uses the post-2008 US card set (COMMUNITY/SECONDARY source). Confirm the set. | `data/cards.json` |
 | Q7 | Package id `com.shibibabu.imperiumastra` and app icon art. | Placeholder `icon.svg` |
