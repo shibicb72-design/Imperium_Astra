@@ -184,6 +184,107 @@ func test_overlay_never_changes_rules_data() -> void:
 	done()
 
 
+## Dig 4a (Track B nit 3): apply() skips an empty string the way problems() rejects it (as for
+## card_text above), so an overlay "" never blanks a shared word; problems() still reports each one.
+func test_empty_overlay_strings_keep_shared_words() -> void:
+	var base := _base_board()
+	var overlay := {
+		"terms": {"jail": ""},
+		"space_names": {"1": {"display_name": ""}, "3": {"display_name": "N", "short_name": ""}},
+		"group_names": {"brown": ""},
+	}
+	var tc := GameSetup.new_game(1234, [], overlay)
+	check_eq(tc.board.term("jail"), base.term("jail"), "empty term keeps the shared word")
+	check_eq(tc.board.spaces[1].display_name, base.spaces[1].display_name, "empty display_name keeps the shared name")
+	check_eq(tc.board.spaces[1].short_name, base.spaces[1].short_name, "empty display_name keeps the shared short_name")
+	check_eq(tc.board.group_info[&"brown"]["display_name"], base.group_info[&"brown"]["display_name"],
+			"empty group name keeps the shared name")
+	check_eq(tc.board.spaces[3].display_name, "N", "display_name applied")
+	check_eq(tc.board.spaces[3].short_name, "N", "empty short_name skipped: short_name follows the new display_name")
+	var problems := ContentOverlay.problems(overlay, base, _card_ids(), _seat_pool().size(), false)
+	for needle in ["term 'jail' is not a non-empty string", "space_names '1' display_name is not a non-empty string",
+			"space_names '3' short_name is not a non-empty string", "group_names 'brown' is not a non-empty string"]:
+		check(problems.has(needle), "problems() reports %s" % needle)
+	done()
+
+
+## Dig 4a (Track B nits 8-9): space_names keys are canonical String indices only ("05" / "+5" / an
+## int key would name space 5 in apply() yet not count for completeness); a section or name of the
+## wrong type is reported by problems() and skipped by apply(); a short_name-only entry keeps the
+## shared display_name.
+func test_overlay_keys_and_sections_strict() -> void:
+	var base := _base_board()
+	var seat_count := _seat_pool().size()
+	var odd_keys := {"space_names": {"05": {"display_name": "Q"}, "+5": {"display_name": "R"}, 5: {"display_name": "I"},
+			"-0": {"display_name": "Z"}}}
+	var tc := GameSetup.new_game(1234, [], odd_keys)
+	check_eq(tc.board.spaces[5].display_name, base.spaces[5].display_name, "non-canonical keys not applied to space 5")
+	check_eq(tc.board.spaces[0].display_name, base.spaces[0].display_name, "'-0' not applied to space 0")
+	var problems := ContentOverlay.problems(odd_keys, base, _card_ids(), seat_count, false)
+	for key in ["05", "+5", "-0"]:
+		check(problems.has("space_names key '%s' is not a space index" % key), "problems() reports key '%s'" % key)
+	check(problems.has("space_names key '5' is not a space index"), "problems() reports the int key 5")
+	var entries := {"space_names": {"6": {"short_name": "S"}, "8": {"display_name": 5}}}
+	var named := GameSetup.new_game(1234, [], entries)
+	check_eq(named.board.spaces[6].display_name, base.spaces[6].display_name, "short_name-only entry keeps the shared display_name")
+	check_eq(named.board.spaces[6].short_name, "S", "short_name-only entry applied")
+	check_eq(named.board.spaces[8].display_name, base.spaces[8].display_name, "non-string display_name skipped")
+	check_eq(named.board.spaces[8].short_name, base.spaces[8].short_name, "non-string display_name leaves short_name")
+	check(ContentOverlay.problems(entries, base, _card_ids(), seat_count, false).has(
+			"space_names '8' display_name is not a non-empty string"), "problems() reports a non-string display_name")
+	var wrong_types := {"terms": ["x"], "space_names": "y", "group_names": 7}
+	var plain := GameSetup.new_game(1234, [], wrong_types)
+	check_eq(plain.board.term("jail"), base.term("jail"), "terms list skipped")
+	check_eq(plain.board.spaces[1].display_name, base.spaces[1].display_name, "space_names string skipped")
+	check_eq(plain.board.group_info[&"brown"]["display_name"], base.group_info[&"brown"]["display_name"],
+			"group_names number skipped")
+	problems = ContentOverlay.problems(wrong_types, base, _card_ids(), seat_count, false)
+	for section in ["terms", "space_names", "group_names"]:
+		check(problems.has("%s is not an object" % section), "problems() reports %s of the wrong type" % section)
+	done()
+
+
+## Dig 4a (Track B nit 7): the board readout names a Bank-owned deed with the pack's `unowned` term
+## in sentence case (first letter only, so "t-unowned" keeps its spelling), never a hard-coded
+## "Unowned".
+func test_board_view_unowned_uses_pack_term() -> void:
+	var cases := {FIXTURE_CONTENT: "T-unowned", DEFAULT_CONTENT: "Unclaimed"}
+	for path: String in cases:
+		var pack := path.get_base_dir().get_file()
+		var tc := GameSetup.new_game(1234, [], JsonData.load_json(path))
+		check_eq(tc.board.deed_at(39).owner, PropertyDeed.BANK, "%s: space 39 starts with the Bank" % pack)
+		var bv := BoardView.new()
+		bv.setup(tc)
+		var text := " ".join(bv.space_details(39))
+		check(text.contains(cases[path]), "%s: pack word in details: %s" % [pack, text])
+		check(not text.contains("Unowned"), "%s: no hard-coded Unowned: %s" % [pack, text])
+		bv.free()
+	done()
+
+
+## Dig 4a (Track B nit 6): build / sell lines (house and hotel) put no indefinite article before the
+## pack word, so the default pack's vowel-initial "outpost module" never logs as "a outpost module".
+func test_build_and_sell_lines_take_no_article() -> void:
+	var tc := GameSetup.new_game(1234, [], JsonData.load_json(DEFAULT_CONTENT))
+	var house := tc.board.term("house")
+	check_eq(house, "outpost module", "default pack house word starts with a vowel")
+	tc.board.deed_at(1).owner = 0
+	tc.board.deed_at(3).owner = 0
+	check(tc.build(0, 1), "build")
+	check(tc.sell_building(0, 1), "sell")
+	check(_logged(tc, "builds 1 %s on" % house), "build line: 1 %s" % house)
+	check(_logged(tc, "sells 1 %s on" % house), "sell line: 1 %s" % house)
+	for _i in 4:
+		check(tc.build(0, 1) and tc.build(0, 3), "even build to 4 on each street")
+	check(tc.build(0, 1) and tc.board.deed_at(1).has_hotel, "fifth build on space 1 is the hotel")
+	check(tc.sell_building(0, 1), "sell the hotel")
+	var hotel := tc.board.term("hotel")
+	check(_logged(tc, "builds 1 %s on" % hotel), "hotel build line: 1 %s" % hotel)
+	check(_logged(tc, "sells 1 %s on" % hotel), "hotel sell line: 1 %s" % hotel)
+	check(not _logged(tc, "a outpost") and not _logged(tc, " a %s" % house), "no 'a outpost' in the log")
+	done()
+
+
 ## Dig 3c (Shibi): seat names are pack words. seat_names (seat order, one per rules.json seat_pool
 ## seat) names the default seats: GameSetup.seats_for() / seats() for the setup screen and the
 ## local_players fallback of new_game(). Colors and Human/Bot flags stay shared; names a caller
@@ -286,6 +387,7 @@ func test_core_does_not_read_ui_style() -> void:
 			check(not src.contains("UiStyle"), "%s does not use UiStyle" % fname)
 			check(not src.contains("ui.json"), "%s does not read ui.json" % fname)
 			check(not src.contains("data/themes"), "%s does not read theme packs" % fname)
+			check(not src.contains("scripts/ui"), "%s does not load UI scripts" % fname)
 	done()
 
 

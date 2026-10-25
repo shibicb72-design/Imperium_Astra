@@ -632,7 +632,11 @@ func space_details(index: int) -> PackedStringArray:
 	var deed := s.deed
 	if deed == null:
 		return out
-	var owner := "Unowned" if deed.owner == PropertyDeed.BANK else "Owner: %s" % controller.players[deed.owner].display_name
+	# Pack word in sentence case, as trade.gd does: String.capitalize() would title-case it and turn
+	# "-" / "_" into spaces.
+	var unowned := board.term("unowned")
+	var owner := (unowned.left(1).to_upper() + unowned.substr(1) if deed.owner == PropertyDeed.BANK
+		else "Owner: %s" % controller.players[deed.owner].display_name)
 	out.append("Price $%d  |  %s" % [deed.list_price, owner])
 	if deed.has_hotel:
 		out.append("1 %s" % board.term("hotel"))

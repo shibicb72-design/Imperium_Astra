@@ -147,8 +147,10 @@ func start(window: Window) -> void:
 	_board_view.animate = is_inside_tree()
 	_board_view.animation_finished.connect(_refresh, CONNECT_DEFERRED)
 	# Deferred: a line can be pushed mid-rule-step (e.g. inside auction resolution), when the
-	# controller is between phases and bot_actor() must not be asked yet.
-	_banner.line_shown.connect(func(_t: String) -> void: _schedule_bot(), CONNECT_DEFERRED)
+	# controller is between phases and bot_actor() must not be asked yet. A bound method, not a
+	# lambda: queued calls are dropped once this Main is freed (a lambda keeps a raw self, so calls
+	# queued before a test freed Main later ran against a dead instance).
+	_banner.line_shown.connect(_schedule_bot.unbind(1), CONNECT_DEFERRED)
 	_banner.emptied.connect(_schedule_bot, CONNECT_DEFERRED)
 	resized.connect(_update_layout)
 	_update_layout()

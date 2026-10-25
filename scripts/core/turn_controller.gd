@@ -341,7 +341,8 @@ func build(player_id: int, space_index: int) -> bool:
 	if cost < 0:
 		return false
 	var what := board.term("hotel") if deed.has_hotel else board.term("house")
-	_say("%s builds a %s on %s for $%d." % [p.display_name, what, board.spaces[space_index].display_name, cost])
+	# "1 %s", not "a %s": a pack word may start with a vowel ("outpost module").
+	_say("%s builds 1 %s on %s for $%d." % [p.display_name, what, board.spaces[space_index].display_name, cost])
 	if had_houses == Building.MAX_HOUSES:
 		_say("%d %s return to %s." % [Building.MAX_HOUSES, board.term("houses"), board.term("bank")])
 	_built_event(p, deed, cost)
@@ -359,7 +360,7 @@ func sell_building(player_id: int, space_index: int) -> bool:
 	var value := Building.sell(board, bank, p, deed, config)
 	if value < 0:
 		return false
-	_say("%s sells a %s on %s for $%d." % [p.display_name, what, board.spaces[space_index].display_name, value])
+	_say("%s sells 1 %s on %s for $%d." % [p.display_name, what, board.spaces[space_index].display_name, value])
 	_sold_event(p, deed, was_hotel, 1, value)
 	state_changed.emit()
 	return true

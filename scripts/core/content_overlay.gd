@@ -8,6 +8,7 @@ extends RefCounted
 ## keys; see docs/THEME_MAP.md):
 ##   terms:       {term key: String}                         -> Board.terms
 ##   space_names: {"<index>": {display_name, short_name?}}   -> Space display_name / short_name
+##                                   (an entry without short_name sets short_name to its display_name)
 ##   group_names: {group id: String}                         -> Board.group_info display_name
 ##   seat_names:  [String, ...]  (seat order, one per rules.json seat_pool seat)
 ##                                   -> default seat display_name (name_seats(), not apply())
@@ -19,8 +20,9 @@ const KEYS: Array[String] = ["_doc", "id", "terms", "space_names", "group_names"
 const SPACE_NAME_KEYS: Array[String] = ["display_name", "short_name"]
 
 
-## Applies `overlay` to the match's board and decks. Unknown keys and malformed entries are skipped
-## (problems() reports them); anything the overlay leaves out keeps the shared data's words.
+## Applies `overlay` to the match's board and decks. Unknown keys, malformed entries and empty
+## strings are skipped (problems() reports them); anything the overlay leaves out keeps the shared
+## data's words.
 static func apply(overlay: Dictionary, board: Board, decks: Array[CardDeck]) -> void:
 	if overlay.is_empty():
 		return
@@ -30,7 +32,7 @@ static func apply(overlay: Dictionary, board: Board, decks: Array[CardDeck]) -> 
 	var terms: Variant = overlay.get("terms", {})
 	if terms is Dictionary:
 		for key: Variant in terms:
-			if terms[key] is String:
+			if terms[key] is String and not String(terms[key]).is_empty():
 				board.terms[String(key)] = terms[key]
 	var space_names: Variant = overlay.get("space_names", {})
 	if space_names is Dictionary:
@@ -40,17 +42,20 @@ static func apply(overlay: Dictionary, board: Board, decks: Array[CardDeck]) -> 
 			if i < 0 or not entry is Dictionary:
 				continue
 			var s := board.spaces[i]
-			if entry.get("display_name") is String:
-				s.display_name = entry["display_name"]
-				s.short_name = s.display_name
-			if entry.get("short_name") is String:
-				s.short_name = entry["short_name"]
+			var display_name: Variant = entry.get("display_name")
+			if display_name is String and not String(display_name).is_empty():
+				s.display_name = display_name
+				s.short_name = display_name
+			var short_name: Variant = entry.get("short_name")
+			if short_name is String and not String(short_name).is_empty():
+				s.short_name = short_name
 	var group_names: Variant = overlay.get("group_names", {})
 	if group_names is Dictionary:
 		for gid: Variant in group_names:
 			var info: Variant = board.group_info.get(StringName(gid))
-			if info is Dictionary and group_names[gid] is String:
-				info["display_name"] = group_names[gid]
+			var word: Variant = group_names[gid]
+			if info is Dictionary and word is String and not String(word).is_empty():
+				info["display_name"] = word
 	var card_text: Variant = overlay.get("card_text", {})
 	if card_text is Dictionary:
 		for deck in decks:
@@ -151,10 +156,13 @@ static func problems(overlay: Dictionary, board: Board, card_ids: Array[String],
 	return out
 
 
-## Space index for a space_names key ("0".."39"), or -1.
+## Space index for a space_names key, or -1. Only the canonical String keys "0".."39" count ("05",
+## "+5" or an int key do not), so apply() reads the same key as the completeness check in problems().
 static func _index(key: Variant, count: int) -> int:
+	if not key is String:
+		return -1
 	var s := String(key)
 	if not s.is_valid_int():
 		return -1
 	var i := s.to_int()
-	return i if i >= 0 and i < count else -1
+	return i if i >= 0 and i < count and str(i) == s else -1

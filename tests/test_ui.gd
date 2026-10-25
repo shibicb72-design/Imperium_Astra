@@ -77,6 +77,27 @@ func test_board_view_tap_and_details() -> void:
 	done()
 
 
+## Dig 4a (teardown noise): UI code connects no lambda with CONNECT_DEFERRED. A lambda keeps a raw
+## self, so a call still queued when its node is freed (tests free Main) ran against a dead or
+## reused instance after the totals; a bound method's queued call is dropped instead.
+func test_no_deferred_lambda_connections_in_ui() -> void:
+	var dir := "res://scripts/ui"
+	for fname in DirAccess.get_files_at(dir):
+		if not fname.ends_with(".gd"):
+			continue
+		var lines := FileAccess.get_file_as_string(dir.path_join(fname)).split("\n")
+		for i in lines.size():
+			var code := lines[i].strip_edges()
+			if code.begins_with("#") or not code.contains("CONNECT_DEFERRED"):
+				continue
+			var start := i  # walk back to the .connect( line that opens this statement
+			while start > 0 and not lines[start].contains(".connect("):
+				start -= 1
+			var statement := "\n".join(lines.slice(start, i + 1))
+			check(not statement.contains("func("), "%s:%d connects no lambda deferred" % [fname, i + 1])
+	done()
+
+
 func test_board_side_keeps_room_for_controls() -> void:
 	check_eq(Main.board_side_for(Vector2(395, 880)), 395.0, "portrait phone: full width")
 	check_eq(Main.board_side_for(Vector2(898, 395)), 395.0, "landscape phone: full height")
