@@ -86,6 +86,21 @@ func start() -> void:
 	start_requested.emit(seats())
 
 
+## Rebuilds the screen from the active theme pack (after UiStyle.set_theme), keeping the seat choice.
+func refresh_theme() -> void:
+	for c in get_children():
+		remove_child(c)
+		if is_inside_tree():
+			c.queue_free()  # a picker button inside may be mid-signal
+		else:
+			c.free()
+	_count_buttons.clear()
+	_seat_rows.clear()
+	_seat_toggles.clear()
+	_build_ui()
+	_refresh()
+
+
 func _build_ui() -> void:
 	add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	add_child(StarfieldBackground.new())

@@ -18,6 +18,12 @@ func _init() -> void:
 	stars = make_stars()
 
 
+## Re-reads the active theme pack (after UiStyle.set_theme) and redraws.
+func refresh_theme() -> void:
+	stars = make_stars()
+	queue_redraw()
+
+
 ## Deterministic star list from the theme (empty when the starfield is disabled).
 static func make_stars() -> Array[Vector4]:
 	var out: Array[Vector4] = []

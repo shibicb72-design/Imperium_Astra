@@ -1,0 +1,6 @@
+{
+  "_doc": "Test-only fixture dialogue for theme switching.",
+  "lines": {
+    "match_start": ["TEST_ALT {name} starts."]
+  }
+}

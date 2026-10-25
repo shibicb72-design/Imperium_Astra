@@ -34,6 +34,7 @@ func _initialize() -> void:
 				continue
 			var inst: TestCase = script.new()
 			inst.call(mname)
+			inst.teardown()
 			if not inst.finished:
 				inst.failures.append("did not reach done() (runtime error?)")
 			if inst.failures.is_empty():

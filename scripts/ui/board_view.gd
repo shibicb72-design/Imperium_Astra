@@ -93,6 +93,11 @@ func setup(tc: TurnController) -> void:
 	sync_to_game()
 
 
+## Redraws board chrome from the active theme pack (after UiStyle.set_theme). Queued motion is kept.
+func refresh_theme() -> void:
+	queue_redraw()
+
+
 ## Snaps tokens and dice to the game state and drops any queued motion.
 func sync_to_game() -> void:
 	_queue.clear()

@@ -1,0 +1,33 @@
+{
+  "_doc": "Test-only fixture pack for theme switching (not shipped, not a real theme). Colors differ from imperium_astra so a switch is observable.",
+  "id": "test_alt",
+  "display_name": "Test Alt",
+  "dialogue_path": "res://tests/fixtures/themes/test_alt/dialogue.json",
+  "colors": {
+    "background": "#f0f0f0",
+    "background_top": "#ffffff",
+    "panel": "#e0e0e0",
+    "panel_border": "#404040",
+    "accent": "#004080",
+    "accent_dim": "#406080",
+    "text": "#101010",
+    "text_muted": "#404040",
+    "button": "#c0d0e0",
+    "button_hover": "#b0c0d0",
+    "button_pressed": "#a0b0c0",
+    "button_disabled": "#d0d0d0",
+    "button_border": "#404040",
+    "button_text": "#101010",
+    "button_text_disabled": "#808080",
+    "input": "#ffffff",
+    "board_cell": "#fafafa",
+    "board_border": "#808080",
+    "board_center": "#ffffff",
+    "board_frame": "#004080",
+    "star": "#000000"
+  },
+  "button": {"corner_radius": 2, "border_width": 1, "content_margin": 8},
+  "panel": {"corner_radius": 2, "border_width": 1, "accent_width": 4, "content_margin": 8},
+  "board": {"group_bar_share": 0.2, "corner_colors": {"GO": "#c0e0c0"}, "corner_marks": {"GO": "test-go"}},
+  "starfield": {"enabled": true, "count": 5, "seed": 3, "max_radius": 1.0, "min_alpha": 0.5}
+}

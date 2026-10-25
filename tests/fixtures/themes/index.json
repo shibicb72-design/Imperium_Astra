@@ -1,0 +1,9 @@
+{
+  "_doc": "Test-only pack index (tests/test_theme_switch.gd). Not shipped; the real index is data/themes/index.json.",
+  "packs": [
+    {"id": "imperium_astra", "theme_path": "res://data/themes/imperium_astra/theme.json"},
+    {"id": "test_alt", "theme_path": "res://tests/fixtures/themes/test_alt/theme.json"},
+    {"id": "test_missing", "theme_path": "res://tests/fixtures/themes/no_such_pack/theme.json"},
+    {"theme_path": "res://tests/fixtures/themes/test_alt/theme.json"}
+  ]
+}

@@ -76,3 +76,14 @@ Brig and Report to the Brig deep red) and the procedural starfield settings. It 
 `space_type` values, prices, rents or card opcodes (`tests/test_theme.gd` checks this). A new
 theme copies the folder, edits the colors, and points `theme_path` at it; the colour-group colors
 themselves stay in `board.json` `groups`. Open style points: OPEN_QUESTIONS.md Q20.
+
+### Switching packs (P5-FEEL A4)
+
+Packs are registered in `data/themes/index.json` (explicit `id` + `theme_path` list; no directory
+scan). `data/ui.json` `theme_path` stays the shipped default. `UiStyle.set_theme(id)` selects a
+registered pack for the current app session only (nothing is written to `res://` or `user://`)
+and drops the cached pack; `Main.select_theme(id)` then re-applies it (HUD Theme, dialogue via the
+pack's `dialogue_path`, setup screen, starfield, board chrome). Supported contract: switch on the
+setup screen before match start; `Main.select_theme` refuses once the match screen is built.
+`UiStyle.reset_theme()` restores the default (tests call it in teardown). A new pack adds its
+folder and one index entry. Covered by `tests/test_theme_switch.gd`.

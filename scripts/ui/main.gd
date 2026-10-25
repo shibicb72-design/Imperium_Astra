@@ -54,6 +54,8 @@ var _log_label: Label
 var _bot_timer: Timer
 var _banner: DialogueBanner
 var _lines: DialogueLines
+var _setup_panel: SetupPanel
+var _starfield: StarfieldBackground
 
 
 func _ready() -> void:
@@ -69,15 +71,43 @@ func show_setup(window: Window) -> SetupPanel:
 		_scale = DisplayScale.apply(window)
 	theme = UiStyle.make_theme()
 	var panel := SetupPanel.new()
+	_setup_panel = panel
 	panel.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(panel)
 	panel.setup(_scale)
 	UiFx.fade_in(panel)
 	panel.start_requested.connect(func(seats: Array[Dictionary]) -> void:
+		_setup_panel = null
 		remove_child(panel)
 		panel.queue_free()
 		begin_match(seats, window))
 	return panel
+
+
+## Theme switch (P5-FEEL A4): selects registered pack `id` for this session and re-themes the
+## setup screen. Supported only before match start; returns false (no change) once the match
+## screen is built or for an unknown id.
+func select_theme(id: String) -> bool:
+	if _board_view != null:
+		push_warning("Main.select_theme: theme switch is only supported before match start")
+		return false
+	if not UiStyle.set_theme(id):
+		return false
+	apply_theme()
+	return true
+
+
+## Re-applies the active pack to built UI: HUD Theme, dialogue lines, setup screen, starfield and
+## board chrome. Panels styled at build time on the match screen are not rebuilt (no mid-match swap).
+func apply_theme() -> void:
+	theme = UiStyle.make_theme()
+	_lines = DialogueLines.load_theme()
+	if _setup_panel != null:
+		_setup_panel.refresh_theme()
+	if _starfield != null:
+		_starfield.refresh_theme()
+	if _board_view != null:
+		_board_view.refresh_theme()
 
 
 ## New local match with the chosen seats (rng_seed < 0: random), then the board screen.
@@ -147,7 +177,8 @@ static func board_side_for(avail: Vector2) -> float:
 
 
 func _build_ui() -> void:
-	add_child(StarfieldBackground.new())
+	_starfield = StarfieldBackground.new()
+	add_child(_starfield)
 
 	var m := int(UiStyle.num("screen_margin", 8.0))
 	_margin = MarginContainer.new()

@@ -19,3 +19,8 @@ func check_eq(actual: Variant, expected: Variant, message: String) -> void:
 
 func done() -> void:
 	finished = true
+
+
+## Runs after every test method, even one that aborted; override to restore shared static state.
+func teardown() -> void:
+	pass

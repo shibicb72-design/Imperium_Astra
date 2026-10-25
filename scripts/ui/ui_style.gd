@@ -6,11 +6,17 @@ extends RefCounted
 
 const UI_PATH := "res://data/ui.json"
 const DEFAULT_THEME_PATH := "res://data/themes/imperium_astra/theme.json"
+## Registered packs (explicit list; never a directory scan).
+const THEME_INDEX_PATH := "res://data/themes/index.json"
 ## Shown for a color key the theme pack lacks, so gaps are obvious on screen.
 const MISSING_COLOR := Color.MAGENTA
 
 static var _data: Dictionary = {}
 static var _theme: Dictionary = {}
+## Session-only pack choice (theme.json path); "" = data/ui.json theme_path. Never written to disk.
+static var _theme_path := ""
+## Pack index read by theme_packs(); tests point it at a fixture index, reset_theme() restores it.
+static var theme_index_path := THEME_INDEX_PATH
 
 
 static func data() -> Dictionary:
@@ -19,11 +25,62 @@ static func data() -> Dictionary:
 	return _data
 
 
-## Active visual theme pack (data/ui.json theme_path): colors, StyleBox sizes, board chrome.
+## Active visual theme pack: colors, StyleBox sizes, board chrome, dialogue_path.
 static func theme_data() -> Dictionary:
 	if _theme.is_empty():
-		_theme = JsonData.load_json(String(data().get("theme_path", DEFAULT_THEME_PATH)))
+		_theme = JsonData.load_json(active_theme_path())
 	return _theme
+
+
+## Shipped default pack path (data/ui.json theme_path).
+static func default_theme_path() -> String:
+	return String(data().get("theme_path", DEFAULT_THEME_PATH))
+
+
+static func active_theme_path() -> String:
+	return _theme_path if _theme_path != "" else default_theme_path()
+
+
+## Registered packs from data/themes/index.json: [{id, theme_path}, ...] in listed order.
+static func theme_packs() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for v: Variant in JsonData.load_json(theme_index_path).get("packs", []):
+		if v is Dictionary and v.has("id") and v.has("theme_path"):
+			out.append({"id": String(v["id"]), "theme_path": String(v["theme_path"])})
+	return out
+
+
+## theme.json path of registered pack `id`, or "" when it is not in the index.
+static func theme_path_for(id: String) -> String:
+	for p in theme_packs():
+		if p["id"] == id:
+			return p["theme_path"]
+	return ""
+
+
+## Selects registered pack `id` for this app session and reloads it. Supported before match start
+## (setup); mid-match hot-swap is out of scope. Returns false (no change) for an unknown id.
+## Callers holding built UI then re-apply it (Main.apply_theme).
+static func set_theme(id: String) -> bool:
+	var path := theme_path_for(id)
+	if path == "" or not FileAccess.file_exists(path):
+		return false
+	_theme_path = path if path != default_theme_path() else ""
+	reload_theme()
+	return true
+
+
+## Back to the shipped default pack and index (tests restore this in teardown).
+static func reset_theme() -> void:
+	theme_index_path = THEME_INDEX_PATH
+	_theme_path = ""
+	reload_theme()
+
+
+## Drops the cached pack so the next read loads the active path. make_theme(),
+## DialogueLines.load_theme() and theme-reading draws pick up the new pack afterwards.
+static func reload_theme() -> void:
+	_theme = {}
 
 
 static func color(key: String) -> Color:
