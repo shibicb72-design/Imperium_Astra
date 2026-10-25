@@ -1,6 +1,11 @@
 {
-  "_doc": "Presentation tunables only (no rule numbers). Sizes are canvas units, about 1 dp on phones and tablets (scripts/platform/display_scale.gd). auction_quick_bid_steps: raise amounts shown as buttons in the auction panel; the minimum legal bid always comes from rules.json. board_max_share_*: largest share of the screen's long side the board may take, so the controls keep room. trade_cash_steps: +/- buttons beside the trade cash fields. bot_step_seconds: pause between bot actions so people can follow.",
+  "_doc": "Presentation tunables only (no rule numbers). Sizes are canvas units, about 1 dp on phones and tablets (scripts/platform/display_scale.gd). auction_quick_bid_steps: raise amounts shown as buttons in the auction panel; the minimum legal bid always comes from rules.json. board_max_share_*: largest share of the screen's long side the board may take, so the controls keep room. trade_cash_steps: +/- buttons beside the trade cash fields. bot_step_seconds: pause between bot actions so people can follow. setup_*: seat setup screen (OPEN_QUESTIONS Q19): seat counts offered, the minimum number of people needed to start, and each seat's Human/Bot default (true = bot).",
   "bot_step_seconds": 0.4,
+  "setup_seat_counts": [2, 3, 4],
+  "setup_default_count": 2,
+  "setup_default_bots": [false, true, true, true],
+  "setup_min_humans": 1,
+  "setup_min_humans_TODO": "at least one person by default; all-bot matches stay possible in GameSetup for headless soak (docs/OPEN_QUESTIONS.md Q19)",
   "auction_quick_bid_steps": [1, 10, 50, 100],
   "touch_target": 48,
   "font_small": 14,

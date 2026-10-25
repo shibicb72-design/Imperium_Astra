@@ -30,8 +30,13 @@ No trademarked names, art or logos are used; the theme is a pure data swap (`doc
   public actions people use, so bots follow every rule check. The UI plays bot steps on a timer
   (`data/ui.json` `bot_step_seconds`). Heuristics: buy / bid / build only while $200 stays, bid up
   to list price, even-build the cheapest street, mortgage only to pay debts, refuse all trades but
-  clearly +EV cash-for-deed offers. Seats: `GameSetup.seats(humans, bots)` (2-6 total).
-- Play mode: **2-player local hotseat** (default: Commander 1 human, Commander 2 bot; one device). The Holdings panel lets
+  clearly +EV cash-for-deed offers. Seats: `GameSetup.seats(humans, bots)` or
+  `GameSetup.seats_for(bot_flags)` in seat order (2-6 total).
+- P2 setup (`scripts/ui/setup_panel.gd`): before each match a setup screen picks 2, 3 or 4 seats
+  and Human/Bot per seat (default seat 1 Human, seat 2 Bot), then Start opens the board. Start
+  needs at least one Human (`data/ui.json` `setup_*`); the last choice is kept in
+  `user://setup.cfg`.
+- Play mode: **local hotseat, 2-4 seats** (one device). The Holdings panel lets
   any commander build / sell / mortgage at any time, and the Trade panel lets any two active
   commanders trade at any time (also off-turn, in the Brig, or while raising funds), as the
   official rules allow.

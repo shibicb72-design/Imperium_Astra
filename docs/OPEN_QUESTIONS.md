@@ -4,7 +4,7 @@ Undecided product points. Placeholders are marked `_placeholder` / `TODO` in dat
 
 | # | Question | Current placeholder |
 |---|---|---|
-| Q1 | Player setup: how many seats, names, colors, AI or human? | `data/rules.json` `local_players`: 2 hotseat "Commander 1/2" (`_placeholder: true`) |
+| Q1 | Player setup: how many seats, names, colors, AI or human? | Seat count and Human/Bot now chosen on the setup screen (Q19). Names/colors: `data/rules.json` `seat_pool` "Commander 1-6" (`_placeholder: true`); `local_players` is only the no-setup default for tests |
 | Q2 | Currency name/symbol for the theme (credits, denarii, ...)? | `$` in UI and card text |
 | Q3 | Auction flow. Official: bids from $10, $1 steps, any player; open outcry isn't specified for digital play. | `Auction`: seat order starting left of the current player; each bidder raises or drops out for good; ends when only the high bidder is left. Quick-bid buttons +1/+10/+50/+100 (`data/ui.json`) |
 | Q4 | ~~Trade UI and rules module~~ **Resolved (P1-TRD):** `Trade` module + `TradePanel`; any time, any phase except game over; one open offer at a time. | n/a |
@@ -18,7 +18,7 @@ Undecided product points. Placeholders are marked `_placeholder` / `TODO` in dat
 | Q16 | UI scale off mobile: desktop and web stay at 1.0 (one canvas unit = one pixel). Scale by monitor DPI / browser devicePixelRatio later? | `DisplayScale` scales only Android/iOS (dpi / 160); no-op elsewhere (P1-UI) |
 | Q17 | Hotseat privacy: everyone sees every commander's cash and offers on one screen. Hide the receiver's view / add a "pass the device" screen? | Everything visible (P1-UI) |
 | Q18 | Bot heuristics (P2-BOT): how strong or cautious should bots be? Buy only above a cash buffer, or whenever affordable? Bid to list price? Leave jail at once or sit in jail late game? Accept which trades? | `data/bot.json` (`_placeholder`): keep $200 after buy / bid / build / jail fine; bid up to min(cash - $200, list price) in $1 steps; build evenly on the cheapest street; mortgage only to pay a debt; lift mortgages when $500 stays; use a pardon, else pay the fine if $200 stays, else roll (3rd turn: pay before rolling); accept only cash-for-deed offers paying >= 150% of list price that don't complete the proposer's color set; never propose trades (INFERRED) |
-| Q19 | Seat setup screen (P2-BOT): rules side takes any mix of human / bot seats (`GameSetup.seats`, names and colors from `rules.json` `seat_pool`). Which screen chooses them, and how many bots by default? | No setup screen yet; default match is `local_players`: Commander 1 human + Commander 2 bot (`is_bot`) for smoke |
+| Q19 | ~~Seat setup screen~~ **Resolved (P2-SETUP):** `SetupPanel` opens before every match: 2/3/4 seats, Human/Bot per seat, Start (`GameSetup.seats_for`, names and colors from `rules.json` `seat_pool`). Default seat 1 Human + seat 2 Bot; last choice kept in `user://setup.cfg`. | Still open inside it: Start needs at least one Human (`data/ui.json` `setup_min_humans` 1, TODO); all-bot stays legal in `GameSetup` for headless soak. Seat counts above 4 (rules allow 6) not offered (`setup_seat_counts`). Names / colors still Q1 placeholders |
 | Q5 | Rent "ask" window (owner must ask before next roll). Keep auto-ask for local play? | Auto-ask (rent always collected) |
 | Q6 | Card text uses the post-2008 US card set (COMMUNITY/SECONDARY source). Confirm the set. | `data/cards.json` |
 | Q7 | Package id `com.shibibabu.imperiumastra` and app icon art. | Placeholder `icon.svg` |

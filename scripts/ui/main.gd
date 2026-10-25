@@ -47,7 +47,36 @@ var _bot_timer: Timer
 
 
 func _ready() -> void:
-	start(get_window())
+	if controller != null:
+		start(get_window())
+	else:
+		show_setup(get_window())
+
+
+## Seat setup first (OPEN_QUESTIONS Q19); its Start builds the match and opens the board.
+func show_setup(window: Window) -> SetupPanel:
+	if window != null:
+		_scale = DisplayScale.apply(window)
+	theme = UiStyle.make_theme()
+	var panel := SetupPanel.new()
+	panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(panel)
+	panel.setup(_scale)
+	panel.start_requested.connect(func(seats: Array[Dictionary]) -> void:
+		remove_child(panel)
+		panel.queue_free()
+		begin_match(seats, window))
+	return panel
+
+
+## New local match with the chosen seats (rng_seed < 0: random), then the board screen.
+func begin_match(seats: Array[Dictionary], window: Window, rng_seed: int = -1) -> void:
+	controller = GameSetup.new_game(rng_seed, seats)
+	controller.determine_start_player()
+	var gs := get_node_or_null("/root/GameState") if is_inside_tree() else null  # tests run outside the tree
+	if gs != null:
+		gs.controller = controller
+	start(window)
 
 
 ## Builds the screen. Called from _ready; tests call it directly (window null: no DPI scaling).
