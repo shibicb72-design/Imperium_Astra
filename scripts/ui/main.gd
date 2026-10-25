@@ -11,7 +11,6 @@ extends Control
 enum Section { HOLDINGS, TRADE, LOG }
 
 const SECTION_NAMES: Array[String] = ["Holdings", "Trade", "Log"]
-const BG_COLOR := Color("#070b1a")
 const MIN_BOARD_SIDE := 160.0
 
 ## Optional injected match (tests); otherwise a new local game from GameState.
@@ -124,11 +123,7 @@ static func board_side_for(avail: Vector2) -> float:
 
 
 func _build_ui() -> void:
-	var bg := ColorRect.new()
-	bg.color = BG_COLOR
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
+	add_child(StarfieldBackground.new())
 
 	var m := int(UiStyle.num("screen_margin", 8.0))
 	_margin = MarginContainer.new()

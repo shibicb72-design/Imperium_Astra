@@ -14,7 +14,7 @@ var _pass_button: Button
 func setup(controller: TurnController) -> void:
 	_controller = controller
 	_steps = UiStyle.int_list("auction_quick_bid_steps", [1])
-	add_theme_stylebox_override("panel", UiStyle.card_style(BoardView.GOLD))
+	add_theme_stylebox_override("panel", UiStyle.card_style(UiStyle.color("accent")))
 	var v := VBoxContainer.new()
 	add_child(v)
 	_info = UiStyle.label(v, "", "body")

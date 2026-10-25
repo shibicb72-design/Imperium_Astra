@@ -8,7 +8,6 @@ extends PanelContainer
 
 signal start_requested(seats: Array[Dictionary])
 
-const BG_COLOR := Color("#070b1a")
 const SECTION := "setup"
 
 ## ConfigFile path for the last choice; empty disables load/save (tests).
@@ -88,9 +87,8 @@ func start() -> void:
 
 
 func _build_ui() -> void:
-	var bg := StyleBoxFlat.new()
-	bg.bg_color = BG_COLOR
-	add_theme_stylebox_override("panel", bg)
+	add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	add_child(StarfieldBackground.new())
 
 	_margin = MarginContainer.new()
 	add_child(_margin)

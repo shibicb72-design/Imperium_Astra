@@ -1,0 +1,51 @@
+{
+  "_doc": "Imperium Astra visual theme (presentation only; no rule numbers, no space_type / prices / rents / opcodes). Selected by data/ui.json theme_path. colors: hex strings read by UiStyle.color(). button / panel: StyleBoxFlat sizes in canvas units (about 1 dp). board: BoardView chrome; corner_colors keyed by the stable space_type name, corner_marks are short glyph lines drawn under the corner label. starfield: procedural backdrop (StarfieldBackground), deterministic from seed. Font sizes and touch sizes stay in data/ui.json.",
+  "id": "imperium_astra",
+  "display_name": "Imperium Astra",
+  "colors": {
+    "background": "#070b1a",
+    "background_top": "#121b3d",
+    "panel": "#10162e",
+    "panel_border": "#5b6aa8",
+    "accent": "#d4af37",
+    "accent_dim": "#8a7224",
+    "text": "#e6ecff",
+    "text_muted": "#9aa6d6",
+    "alert": "#ff9a8a",
+    "button": "#1a2350",
+    "button_hover": "#24306a",
+    "button_pressed": "#3a2f0f",
+    "button_disabled": "#0f1430",
+    "button_border": "#5b6aa8",
+    "button_text": "#f4e9c8",
+    "button_text_disabled": "#6b7499",
+    "input": "#0b1026",
+    "board_cell": "#141a33",
+    "board_border": "#3c4778",
+    "board_center": "#0b1026",
+    "board_frame": "#d4af37",
+    "dice_face": "#f4e9c8",
+    "dice_pip": "#10162e",
+    "star": "#ffffff"
+  },
+  "button": {"corner_radius": 6, "border_width": 2, "content_margin": 10},
+  "panel": {"corner_radius": 8, "border_width": 1, "accent_width": 6, "content_margin": 8},
+  "board": {
+    "group_bar_share": 0.24,
+    "frame_width": 3,
+    "center_rule_width": 2,
+    "corner_colors": {
+      "GO": "#1d3f35",
+      "JAIL_CORNER": "#45202a",
+      "FREE_PARKING": "#1f2850",
+      "GO_TO_JAIL": "#45202a"
+    },
+    "corner_marks": {
+      "GO": "<< +",
+      "JAIL_CORNER": "| | |",
+      "FREE_PARKING": "* * *",
+      "GO_TO_JAIL": "-> | |"
+    }
+  },
+  "starfield": {"enabled": true, "count": 120, "seed": 7, "max_radius": 1.6, "min_alpha": 0.25}
+}

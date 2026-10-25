@@ -65,3 +65,14 @@ Each space may also carry a `short_name` (compact board label, e.g. "Mercurii Ga
 back to `display_name` and is display data only, like `display_name`.
 
 Currency is shown as `$` for now (see OPEN_QUESTIONS.md Q2).
+
+## Visual theme pack (P3-THEME)
+
+Names live in `data/board.json`; the look lives in `data/themes/<id>/theme.json`, picked by
+`data/ui.json` `theme_path` (default `imperium_astra`). The pack holds colors (navy panels, gold
+accent, ivory button text), button / panel StyleBox sizes, board chrome (group bar height, gold
+frame, corner tints and marks keyed by the stable `space_type` name: Launch Bay green-gold,
+Brig and Report to the Brig deep red) and the procedural starfield settings. It never holds
+`space_type` values, prices, rents or card opcodes (`tests/test_theme.gd` checks this). A new
+theme copies the folder, edits the colors, and points `theme_path` at it; the colour-group colors
+themselves stay in `board.json` `groups`. Open style points: OPEN_QUESTIONS.md Q20.

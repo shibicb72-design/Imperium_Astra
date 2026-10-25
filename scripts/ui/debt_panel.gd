@@ -4,8 +4,6 @@ extends PanelContainer
 ## pinned above the scrolling sections, so Pay and Declare Bankruptcy are always on screen; the
 ## debtor sells buildings / mortgages in the Holdings section, then pays or declares bankruptcy.
 
-const ALERT_COLOR := Color("#ff9a8a")
-
 var _controller: TurnController
 var _info: Label
 var _pay_button: Button
@@ -14,7 +12,7 @@ var _bankrupt_button: Button
 
 func setup(controller: TurnController) -> void:
 	_controller = controller
-	add_theme_stylebox_override("panel", UiStyle.card_style(ALERT_COLOR))
+	add_theme_stylebox_override("panel", UiStyle.card_style(UiStyle.color("alert")))
 	var v := VBoxContainer.new()
 	add_child(v)
 	_info = UiStyle.label(v, "", "body")

@@ -5,8 +5,6 @@ extends VBoxContainer
 ## (group color on the left edge); rows are rebuilt on every refresh and enable states come
 ## straight from the module checks. The main screen puts this panel in a scroll list.
 
-const NEUTRAL_ACCENT := Color("#5b6aa8")
-
 var _controller: TurnController
 var _actor_picker: OptionButton
 var _summary: Label
@@ -75,9 +73,9 @@ func _add_deed_card(p: Player, deed: PropertyDeed) -> void:
 	var tc := _controller
 	var board := tc.board
 	var s := board.spaces[deed.space_index]
-	var accent := NEUTRAL_ACCENT
+	var accent := UiStyle.color("panel_border")
 	if s.space_type == Space.Type.STREET:
-		accent = board.group_info.get(deed.color_group_id, {}).get("color", NEUTRAL_ACCENT)
+		accent = board.group_info.get(deed.color_group_id, {}).get("color", accent)
 	var card := PanelContainer.new()
 	card.add_theme_stylebox_override("panel", UiStyle.card_style(accent))
 	card.mouse_filter = Control.MOUSE_FILTER_PASS

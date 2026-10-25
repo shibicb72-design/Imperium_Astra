@@ -7,8 +7,6 @@ extends VBoxContainer
 ## Layout: pickers, a scrolling body, then the problem line and action row pinned at the bottom
 ## so Accept / Reject / Withdraw / Back are always on screen.
 
-const PROBLEM_COLOR := Color("#ff9a8a")
-
 var _controller: TurnController
 var _from_picker: OptionButton
 var _to_picker: OptionButton
@@ -40,7 +38,7 @@ func setup(controller: TurnController) -> void:
 	_body.add_theme_constant_override("separation", 4)
 	scroll.add_child(_body)
 	_problem = UiStyle.label(self, "", "small")
-	_problem.add_theme_color_override("font_color", PROBLEM_COLOR)
+	_problem.add_theme_color_override("font_color", UiStyle.color("alert"))
 	_actions = HFlowContainer.new()
 	add_child(_actions)
 	_new_draft(0, 1 if controller.players.size() > 1 else 0)

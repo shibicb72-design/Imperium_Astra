@@ -70,4 +70,6 @@ godot --headless --path . --export-debug "Android" build/imperium-astra-debug.ap
 ```
 
 CI (`.github/workflows/android.yml`) does the same on every push to `main` and uploads the APK.
-It creates a throwaway debug keystore per run; no keys are committed.
+It signs with the shared debug keystore `android/debug.keystore` (the same one used for local
+debug exports; standard `androiddebugkey` / `android` debug credentials). No release keys are
+committed or created.

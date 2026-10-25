@@ -4,20 +4,23 @@ extends Control
 ## auto-fitted to the cell), owner markers and player tokens as colored dots. Tapping a space
 ## selects it and shows its details in the empty board center; tapping again or the center
 ## clears it. Reads the TurnController; never changes game state. Scales to any size (square
-## board fitted into its rect).
+## board fitted into its rect). Colors and chrome (group bar height, frame, corner tints and
+## marks) come from the theme pack via UiStyle; the dice readout is drawn as two pip faces.
 
 signal space_selected(index: int)
 
 const GRID := 11
-const CELL_COLOR := Color("#141a33")
-const CORNER_COLOR := Color("#1f2850")
-const BORDER_COLOR := Color("#5b6aa8")
-const TEXT_COLOR := Color("#e6ecff")
-const MUTED_COLOR := Color("#9aa6d6")
-const CENTER_COLOR := Color("#0b1026")
-const GOLD := Color("#d4af37")
 const MIN_LABEL_FONT := 6
 const NO_SELECTION := -1
+## Pip positions on a 3x3 grid (0..2) per die value.
+const PIPS := {
+	1: [Vector2i(1, 1)],
+	2: [Vector2i(0, 0), Vector2i(2, 2)],
+	3: [Vector2i(0, 0), Vector2i(1, 1), Vector2i(2, 2)],
+	4: [Vector2i(0, 0), Vector2i(2, 0), Vector2i(0, 2), Vector2i(2, 2)],
+	5: [Vector2i(0, 0), Vector2i(2, 0), Vector2i(1, 1), Vector2i(0, 2), Vector2i(2, 2)],
+	6: [Vector2i(0, 0), Vector2i(0, 1), Vector2i(0, 2), Vector2i(2, 0), Vector2i(2, 1), Vector2i(2, 2)],
+}
 
 var controller: TurnController = null
 var selected_index: int = NO_SELECTION
@@ -90,26 +93,49 @@ func _gui_input(event: InputEvent) -> void:
 		accept_event()
 
 
+## Theme tint for a corner space_type (GO, JAIL_CORNER, ...); the plain cell color otherwise.
+static func corner_tint(space_type: int) -> Color:
+	var v: Variant = UiStyle.theme_data().get("board", {}).get("corner_colors", {}).get(Space.Type.keys()[space_type])
+	return Color.html(String(v)) if v is String and Color.html_is_valid(v) else UiStyle.color("board_cell")
+
+
+## Short glyph line drawn under a corner's label ("" when the theme has none).
+static func corner_mark(space_type: int) -> String:
+	return String(UiStyle.theme_data().get("board", {}).get("corner_marks", {}).get(Space.Type.keys()[space_type], ""))
+
+
 func _draw() -> void:
 	if controller == null:
 		return
 	var br := _board_rect()
 	var cell := br.size.x / GRID
 	var font := ThemeDB.fallback_font
-	draw_rect(br, CENTER_COLOR)
+	var gold := UiStyle.color("accent")
+	var cell_color := UiStyle.color("board_cell")
+	var border := UiStyle.color("board_border")
+	var bar_share := UiStyle.theme_num("board", "group_bar_share", 0.24)
+	draw_rect(br, UiStyle.color("board_center"))
 	var here := controller.current_player().position
 	for s in controller.board.spaces:
 		var c := cell_of(s.index)
 		var r := Rect2(br.position + Vector2(c) * cell, Vector2(cell, cell))
 		var is_corner := s.index % 10 == 0
-		draw_rect(r, CORNER_COLOR if is_corner else CELL_COLOR)
+		draw_rect(r, corner_tint(s.space_type) if is_corner else cell_color)
 		var top := 0.0
 		if s.space_type == Space.Type.STREET:
 			var g: Dictionary = controller.board.group_info.get(s.color_group_id, {})
-			top = cell * 0.2
+			top = cell * bar_share
 			draw_rect(Rect2(r.position, Vector2(cell, top)), g.get("color", Color.GRAY))
-		draw_rect(r, BORDER_COLOR, false, 1.0)
-		_draw_label(font, Rect2(r.position + Vector2(1, top), Vector2(cell - 2, cell * 0.78 - top)), s.short_name)
+			draw_line(r.position + Vector2(0, top), r.position + Vector2(cell, top), Color.BLACK, 1.0)
+		draw_rect(r, border, false, 1.0)
+		if is_corner:
+			_draw_label(font, Rect2(r.position + Vector2(2, cell * 0.12), Vector2(cell - 4, cell * 0.5)), s.short_name)
+			var mark := corner_mark(s.space_type)
+			if mark != "":
+				var ms := maxi(MIN_LABEL_FONT, int(cell * 0.16))
+				draw_string(font, r.position + Vector2(0, cell * 0.78), mark, HORIZONTAL_ALIGNMENT_CENTER, cell, ms, gold)
+		else:
+			_draw_label(font, Rect2(r.position + Vector2(1, top + 1), Vector2(cell - 2, cell * 0.78 - top)), s.short_name)
 		if s.deed != null and s.deed.owner != PropertyDeed.BANK:
 			var owner_color := controller.players[s.deed.owner].color
 			if s.deed.is_mortgaged:
@@ -119,13 +145,17 @@ func _draw() -> void:
 		if s.index == here:
 			draw_rect(r.grow(-1.0), controller.current_player().color, false, 2.0)
 		if s.index == selected_index:
-			draw_rect(r.grow(-2.0), GOLD, false, 3.0)
+			draw_rect(r.grow(-2.0), gold, false, 3.0)
+	var frame := UiStyle.theme_num("board", "frame_width", 3)
+	draw_rect(br.grow(-frame * 0.5), UiStyle.color("board_frame"), false, frame)
+	draw_rect(Rect2(br.position + Vector2(cell, cell), Vector2(cell, cell) * 9.0), UiStyle.color("accent_dim"), false,
+			UiStyle.theme_num("board", "center_rule_width", 2))
 	_draw_tokens(br, cell)
 	_draw_center(br, cell, font)
 
 
 ## Largest font (up to a cap) at which every word of the label fits the cell width, wrapped
-## to at most three lines.
+## to at most three lines. Drawn with a dark outline so it stays legible on any tint.
 func _draw_label(font: Font, area: Rect2, text: String) -> void:
 	var font_size := maxi(MIN_LABEL_FONT, int(area.size.x * 0.26))
 	var words := text.split(" ", false)
@@ -138,8 +168,10 @@ func _draw_label(font: Font, area: Rect2, text: String) -> void:
 		if fits:
 			break
 		font_size -= 1
-	draw_multiline_string(font, area.position + Vector2(0, font.get_ascent(font_size) + 1), text,
-			HORIZONTAL_ALIGNMENT_CENTER, area.size.x, font_size, 3, TEXT_COLOR)
+	var pos := area.position + Vector2(0, font.get_ascent(font_size) + 1)
+	draw_multiline_string_outline(font, pos, text, HORIZONTAL_ALIGNMENT_CENTER, area.size.x, font_size, 3,
+			maxi(2, int(font_size * 0.25)), Color(0, 0, 0, 0.75))
+	draw_multiline_string(font, pos, text, HORIZONTAL_ALIGNMENT_CENTER, area.size.x, font_size, 3, UiStyle.color("text"))
 
 
 ## Houses as small squares in the color strip; a hotel as one wide gold bar.
@@ -147,10 +179,14 @@ func _draw_buildings(r: Rect2, cell: float, deed: PropertyDeed) -> void:
 	var pip := cell * 0.14
 	var y := r.position.y + cell * 0.03
 	if deed.has_hotel:
-		draw_rect(Rect2(Vector2(r.position.x + cell * 0.3, y), Vector2(cell * 0.4, pip)), GOLD)
+		var bar := Rect2(Vector2(r.position.x + cell * 0.3, y), Vector2(cell * 0.4, pip))
+		draw_rect(bar, UiStyle.color("accent"))
+		draw_rect(bar, Color.BLACK, false, 1.0)
 		return
 	for i in deed.houses:
-		draw_rect(Rect2(Vector2(r.position.x + cell * (0.08 + 0.22 * i), y), Vector2(pip, pip)), TEXT_COLOR)
+		var sq := Rect2(Vector2(r.position.x + cell * (0.08 + 0.22 * i), y), Vector2(pip, pip))
+		draw_rect(sq, UiStyle.color("text"))
+		draw_rect(sq, Color.BLACK, false, 1.0)
 
 
 func _draw_tokens(br: Rect2, cell: float) -> void:
@@ -172,18 +208,27 @@ func _draw_center(br: Rect2, cell: float, font: Font) -> void:
 	var inner := Rect2(br.position + Vector2(cell, cell) * 1.2, Vector2(cell, cell) * 8.6)
 	var title_size := maxi(12, int(cell * 0.45))
 	var body_size := maxi(10, int(cell * 0.32))
+	var text := UiStyle.color("text")
+	var muted := UiStyle.color("text_muted")
 	var y := inner.position.y + font.get_ascent(title_size)
 	draw_string(font, Vector2(inner.position.x, y), String(ProjectSettings.get_setting("application/config/name", "")).to_upper(),
-			HORIZONTAL_ALIGNMENT_CENTER, inner.size.x, title_size, GOLD)
+			HORIZONTAL_ALIGNMENT_CENTER, inner.size.x, title_size, UiStyle.color("accent"))
+	y += font.get_descent(title_size)
+	draw_line(Vector2(inner.get_center().x - cell * 1.5, y), Vector2(inner.get_center().x + cell * 1.5, y),
+			UiStyle.color("accent_dim"), 1.0)
 	if controller.dice.d1 > 0:
-		y += font.get_height(title_size) * 1.1
-		draw_string(font, Vector2(inner.position.x, y), "%d  +  %d" % [controller.dice.d1, controller.dice.d2],
-				HORIZONTAL_ALIGNMENT_CENTER, inner.size.x, title_size, TEXT_COLOR)
-	y += font.get_height(title_size) * 0.6
+		var face := cell * 0.85
+		var gap := cell * 0.3
+		var left := inner.get_center().x - face - gap * 0.5
+		y += cell * 0.2
+		_draw_die(Rect2(Vector2(left, y), Vector2(face, face)), controller.dice.d1)
+		_draw_die(Rect2(Vector2(left + face + gap, y), Vector2(face, face)), controller.dice.d2)
+		y += face
+	y += font.get_height(title_size) * 0.4
 	var lines := space_details(selected_index)
 	if lines.is_empty():
 		draw_string(font, Vector2(inner.position.x, inner.end.y - font.get_descent(body_size)),
-				"Tap a space for details", HORIZONTAL_ALIGNMENT_CENTER, inner.size.x, body_size, MUTED_COLOR)
+				"Tap a space for details", HORIZONTAL_ALIGNMENT_CENTER, inner.size.x, body_size, muted)
 		return
 	var s := controller.board.spaces[selected_index]
 	if s.space_type == Space.Type.STREET:
@@ -196,7 +241,16 @@ func _draw_center(br: Rect2, cell: float, font: Font) -> void:
 		if y > inner.end.y:
 			break
 		draw_string(font, Vector2(inner.position.x, y), lines[i], HORIZONTAL_ALIGNMENT_CENTER,
-				inner.size.x, fs, TEXT_COLOR if i == 0 else MUTED_COLOR)
+				inner.size.x, fs, text if i == 0 else muted)
+
+
+## One die face: rounded ivory square with dark pips (theme dice_face / dice_pip).
+func _draw_die(r: Rect2, value: int) -> void:
+	var face := UiStyle.flat_box(UiStyle.color("dice_face"), UiStyle.color("accent"), 2, int(r.size.x * 0.18), 0)
+	face.draw(get_canvas_item(), r)
+	var step := r.size.x / 4.0
+	for p: Vector2i in PIPS.get(value, []):
+		draw_circle(r.position + Vector2(step * (p.x + 1), step * (p.y + 1)), r.size.x * 0.09, UiStyle.color("dice_pip"))
 
 
 ## Text lines describing a space for the center readout (empty for NO_SELECTION).
