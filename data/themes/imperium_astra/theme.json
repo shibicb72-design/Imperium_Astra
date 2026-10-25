@@ -2,6 +2,7 @@
   "_doc": "Imperium Astra visual theme (presentation only; no rule numbers, no space_type / prices / rents / opcodes). Selected by data/ui.json theme_path. colors: hex strings read by UiStyle.color(). button / panel: StyleBoxFlat sizes in canvas units (about 1 dp). board: BoardView chrome; corner_colors keyed by the stable space_type name, corner_marks are short glyph lines drawn under the corner label. starfield: procedural backdrop (StarfieldBackground), deterministic from seed. Font sizes and touch sizes stay in data/ui.json.",
   "id": "imperium_astra",
   "display_name": "Imperium Astra",
+  "dialogue_path": "res://data/themes/imperium_astra/dialogue.json",
   "colors": {
     "background": "#070b1a",
     "background_top": "#121b3d",

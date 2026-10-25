@@ -41,8 +41,9 @@ func _on_bid(i: int) -> void:
 
 func refresh() -> void:
 	var a := _controller.auction
-	visible = _controller.phase == TurnController.Phase.AUCTION and a != null
-	if not visible:
+	var shown := _controller.phase == TurnController.Phase.AUCTION and a != null
+	UiFx.set_shown(self, shown)  # short fade in / out (instant in headless tests)
+	if not shown:
 		return
 	var s := _controller.board.spaces[a.space_index]
 	var bidder := _controller.players[a.current_bidder()]

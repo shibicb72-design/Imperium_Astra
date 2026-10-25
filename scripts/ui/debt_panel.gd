@@ -24,8 +24,9 @@ func setup(controller: TurnController) -> void:
 
 func refresh() -> void:
 	var debt := _controller.current_debt()
-	visible = _controller.phase == TurnController.Phase.RAISING_FUNDS and debt != null
-	if not visible:
+	var shown := _controller.phase == TurnController.Phase.RAISING_FUNDS and debt != null
+	UiFx.set_shown(self, shown)  # short fade in / out (instant in headless tests)
+	if not shown:
 		return
 	var tc := _controller
 	var debtor := tc.players[debt.debtor]

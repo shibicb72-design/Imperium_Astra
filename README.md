@@ -37,6 +37,11 @@ No trademarked names, art or logos are used; the theme is a pure data swap (`doc
   and Human/Bot per seat (default seat 1 Human, seat 2 Bot), then Start opens the board. Start
   needs at least one Human (`data/ui.json` `setup_*`); the last choice is kept in
   `user://setup.cfg`.
+- P4 demo motion and dialogue (`docs/IMPERIUM_ASTRA_P4_DEMO_REPORT.md`): dice tumble, pawns hop
+  space by space (arc to the Brig), panels fade, and an event banner over the board center reads
+  out rolls, landings, rent, tax, cards, jail, trades and bankruptcy. Lines are theme data
+  (`data/themes/<id>/dialogue.json`); the rules only emit `TurnController.game_event` (ids and
+  numbers, no text). Timings in `data/ui.json`.
 - Play mode: **local hotseat, 2-4 seats** (one device). The Holdings panel lets
   any commander build / sell / mortgage at any time, and the Trade panel lets any two active
   commanders trade at any time (also off-turn, in the Brig, or while raising funds), as the

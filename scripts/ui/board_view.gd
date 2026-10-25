@@ -6,8 +6,17 @@ extends Control
 ## clears it. Reads the TurnController; never changes game state. Scales to any size (square
 ## board fitted into its rect). Colors and chrome (group bar height, frame, corner tints and
 ## marks) come from the theme pack via UiStyle; the dice readout is drawn as two pip faces.
+##
+## Motion (P4-DEMO): the game resolves a roll instantly, so the view keeps its own animation queue
+## played in order: dice tumble (queue_dice), pawn hops space by space along the track
+## (queue_move), a straight arc to the Brig (queue_jump) and callbacks (queue_call; Main uses it
+## so a banner line appears when the pawn arrives, not before). Tokens are drawn at their shown
+## positions, which catch up with the game as the queue plays. With `animate` off (headless
+## tests, outside the tree) everything applies at once. Timings: data/ui.json dice_roll_seconds,
+## pawn_step_seconds, pawn_move_max_seconds, pawn_jump_seconds, pawn_hop_height.
 
 signal space_selected(index: int)
+signal animation_finished
 
 const GRID := 11
 const MIN_LABEL_FONT := 6
@@ -24,6 +33,19 @@ const PIPS := {
 
 var controller: TurnController = null
 var selected_index: int = NO_SELECTION
+## Play queued motion over time; off = apply at once. Main turns it on inside the live tree.
+var animate := false
+
+## Board index each token is drawn at (player id -> index); catches up as the queue plays.
+var _shown_pos: Dictionary = {}
+## Dice faces drawn in the center (0 = none yet); set when a queued roll finishes tumbling.
+var _shown_dice := Vector2i.ZERO
+var _queue: Array[Dictionary] = []
+var _item: Dictionary = {}
+var _t := 0.0
+var _tumble := Vector2i.ONE
+var _tumble_left := 0.0
+var _rng := RandomNumberGenerator.new()
 
 
 func _init() -> void:
@@ -34,7 +56,124 @@ func _init() -> void:
 
 func setup(tc: TurnController) -> void:
 	controller = tc
+	sync_to_game()
+
+
+## Snaps tokens and dice to the game state and drops any queued motion.
+func sync_to_game() -> void:
+	_queue.clear()
+	_item = {}
+	_shown_pos.clear()
+	if controller != null:
+		for p in controller.players:
+			_shown_pos[p.id] = p.position
+		_shown_dice = Vector2i(controller.dice.d1, controller.dice.d2)
 	queue_redraw()
+
+
+func is_animating() -> bool:
+	return not _item.is_empty() or not _queue.is_empty()
+
+
+## Board index a token is drawn at right now.
+func shown_position(player_id: int) -> int:
+	return int(_shown_pos.get(player_id, controller.players[player_id].position))
+
+
+func shown_dice() -> Vector2i:
+	return _shown_dice
+
+
+func queue_dice(d1: int, d2: int) -> void:
+	_enqueue({"type": &"dice", "d1": d1, "d2": d2, "dur": UiStyle.num("dice_roll_seconds", 0.55)})
+
+
+## Hop `steps` spaces (negative: backward) from `from`. Long moves speed up to fit
+## pawn_move_max_seconds.
+func queue_move(player_id: int, from: int, steps: int) -> void:
+	if steps == 0:
+		return
+	var per := UiStyle.num("pawn_step_seconds", 0.14)
+	per = minf(per, UiStyle.num("pawn_move_max_seconds", 1.8) / absi(steps))
+	_enqueue({"type": &"move", "player": player_id, "from": from, "steps": steps, "per": per,
+			"dur": per * absi(steps)})
+
+
+## Straight arc from `from` to `to` (sent to the Brig).
+func queue_jump(player_id: int, from: int, to: int) -> void:
+	_enqueue({"type": &"jump", "player": player_id, "from": from, "to": to,
+			"dur": UiStyle.num("pawn_jump_seconds", 0.6)})
+
+
+## Runs `fn` once everything queued before it has played (at once when idle).
+func queue_call(fn: Callable) -> void:
+	_enqueue({"type": &"call", "fn": fn, "dur": 0.0})
+
+
+func _enqueue(item: Dictionary) -> void:
+	if not animate or (not is_animating() and float(item["dur"]) <= 0.0):
+		_finish_item(item)
+		return
+	_queue.append(item)
+	if _item.is_empty():
+		_start_next()
+
+
+func _start_next() -> void:
+	while not _queue.is_empty():
+		var item: Dictionary = _queue.pop_front()
+		if float(item["dur"]) <= 0.0:
+			_finish_item(item)
+			continue
+		_item = item
+		_t = 0.0
+		_tumble_left = 0.0
+		queue_redraw()
+		return
+	_item = {}
+	if controller != null:  # anything that moved without an event snaps into place
+		for p in controller.players:
+			_shown_pos[p.id] = p.position
+	queue_redraw()
+	animation_finished.emit()
+
+
+func _finish_item(item: Dictionary) -> void:
+	match item["type"]:
+		&"dice":
+			_shown_dice = Vector2i(int(item["d1"]), int(item["d2"]))
+		&"move":
+			_shown_pos[int(item["player"])] = posmod(int(item["from"]) + int(item["steps"]), Board.SPACE_COUNT)
+		&"jump":
+			_shown_pos[int(item["player"])] = int(item["to"])
+		&"call":
+			(item["fn"] as Callable).call()
+	queue_redraw()
+
+
+## Plays the queue forward by `delta` seconds; called from _process, or by tests.
+func advance(delta: float) -> void:
+	while not _item.is_empty() and delta > 0.0:
+		var left := float(_item["dur"]) - _t
+		if delta < left:
+			_t += delta
+			if _item["type"] == &"dice":
+				_tumble_left -= delta
+				if _tumble_left <= 0.0:
+					_tumble = Vector2i(_rng.randi_range(1, 6), _rng.randi_range(1, 6))
+					_tumble_left = 0.07
+			queue_redraw()
+			return
+		delta -= left
+		var done := _item
+		_item = {}
+		_finish_item(done)
+		_start_next()
+
+
+func _process(delta: float) -> void:
+	if not _item.is_empty():
+		advance(delta)
 
 
 ## Grid cell (col, row) of a board index: GO bottom-right, clockwise (bottom row right-to-left,
@@ -67,6 +206,14 @@ static func index_of_cell(c: Vector2i) -> int:
 func _board_rect() -> Rect2:
 	var side := minf(size.x, size.y)
 	return Rect2((size - Vector2(side, side)) * 0.5, Vector2(side, side))
+
+
+## Area for the dialogue banner: the lower middle of the empty board center, below the dice.
+func banner_rect() -> Rect2:
+	var br := _board_rect()
+	var cell := br.size.x / GRID
+	var inner := Rect2(br.position + Vector2(cell, cell) * 1.3, Vector2(cell, cell) * 8.4)
+	return Rect2(inner.position + Vector2(0, inner.size.y * 0.42), Vector2(inner.size.x, inner.size.y * 0.36))
 
 
 ## Board index under a local position, or NO_SELECTION.
@@ -115,7 +262,7 @@ func _draw() -> void:
 	var border := UiStyle.color("board_border")
 	var bar_share := UiStyle.theme_num("board", "group_bar_share", 0.24)
 	draw_rect(br, UiStyle.color("board_center"))
-	var here := controller.current_player().position
+	var here := shown_position(controller.current_player().id)
 	for s in controller.board.spaces:
 		var c := cell_of(s.index)
 		var r := Rect2(br.position + Vector2(c) * cell, Vector2(cell, cell))
@@ -189,19 +336,55 @@ func _draw_buildings(r: Rect2, cell: float, deed: PropertyDeed) -> void:
 		draw_rect(sq, Color.BLACK, false, 1.0)
 
 
+## Resting spot of a player's token inside the cell of board index `index`.
+static func token_point(br: Rect2, cell: float, player_id: int, index: int) -> Vector2:
+	var origin := br.position + Vector2(cell_of(posmod(index, Board.SPACE_COUNT))) * cell
+	return origin + Vector2(cell * (0.25 + 0.25 * (player_id % 3)), cell * (0.62 - 0.22 * floorf(player_id / 3.0)))
+
+
+## Where the token of the moving player is mid-animation, plus its lift (0..1) for drawing.
+func _moving_point(br: Rect2, cell: float) -> Array:
+	var pid := int(_item["player"])
+	var hop := UiStyle.num("pawn_hop_height", 0.3) * cell
+	if _item["type"] == &"jump":
+		var u := clampf(_t / float(_item["dur"]), 0.0, 1.0)
+		var a := token_point(br, cell, pid, int(_item["from"]))
+		var b := token_point(br, cell, pid, int(_item["to"]))
+		var lift := sin(PI * u)
+		return [a.lerp(b, u) - Vector2(0, hop * 3.0 * lift), lift]
+	var per := float(_item["per"])
+	var dir := signi(int(_item["steps"]))
+	var k := mini(int(_t / per), absi(int(_item["steps"])) - 1)
+	var u2 := clampf((_t - k * per) / per, 0.0, 1.0)
+	var i0 := int(_item["from"]) + dir * k
+	var p0 := token_point(br, cell, pid, i0)
+	var p1 := token_point(br, cell, pid, i0 + dir)
+	var lift2 := sin(PI * u2)
+	return [p0.lerp(p1, u2) - Vector2(0, hop * lift2), lift2]
+
+
 func _draw_tokens(br: Rect2, cell: float) -> void:
 	var radius := cell * 0.12
+	var moving := -1
+	if not _item.is_empty() and _item["type"] in [&"move", &"jump"]:
+		moving = int(_item["player"])
 	for p in controller.players:
-		if p.is_bankrupt:
+		if p.is_bankrupt or p.id == moving:
 			continue
-		var c := cell_of(p.position)
-		var origin := br.position + Vector2(c) * cell
-		var offset := Vector2(cell * (0.25 + 0.25 * (p.id % 3)), cell * (0.62 - 0.22 * floorf(p.id / 3.0)))
-		var center := origin + offset
-		draw_circle(center, radius, p.color)
-		draw_arc(center, radius, 0.0, TAU, 24, Color.WHITE, 2.0 if p == controller.current_player() else 1.0)
-		if p.in_jail:
-			draw_line(center - Vector2(radius, 0), center + Vector2(radius, 0), Color.BLACK, 2.0)
+		_draw_token(token_point(br, cell, p.id, shown_position(p.id)), radius, p)
+	if moving >= 0:  # drawn last so it passes over the others, with a soft shadow below it
+		var mp := _moving_point(br, cell)
+		var lift: float = mp[1]
+		var rest := (mp[0] as Vector2) + Vector2(0, UiStyle.num("pawn_hop_height", 0.3) * cell * lift)
+		draw_circle(rest, radius * (1.0 - 0.3 * lift), Color(0, 0, 0, 0.35))
+		_draw_token(mp[0], radius * (1.0 + 0.35 * lift), controller.players[moving])
+
+
+func _draw_token(center: Vector2, radius: float, p: Player) -> void:
+	draw_circle(center, radius, p.color)
+	draw_arc(center, radius, 0.0, TAU, 24, Color.WHITE, 2.0 if p == controller.current_player() else 1.0)
+	if p.in_jail:
+		draw_line(center - Vector2(radius, 0), center + Vector2(radius, 0), Color.BLACK, 2.0)
 
 
 func _draw_center(br: Rect2, cell: float, font: Font) -> void:
@@ -216,13 +399,21 @@ func _draw_center(br: Rect2, cell: float, font: Font) -> void:
 	y += font.get_descent(title_size)
 	draw_line(Vector2(inner.get_center().x - cell * 1.5, y), Vector2(inner.get_center().x + cell * 1.5, y),
 			UiStyle.color("accent_dim"), 1.0)
-	if controller.dice.d1 > 0:
+	var rolling: bool = not _item.is_empty() and _item["type"] == &"dice"
+	var faces := _tumble if rolling else (_shown_dice if is_animating() else Vector2i(controller.dice.d1, controller.dice.d2))
+	if faces.x > 0:
 		var face := cell * 0.85
 		var gap := cell * 0.3
 		var left := inner.get_center().x - face - gap * 0.5
 		y += cell * 0.2
-		_draw_die(Rect2(Vector2(left, y), Vector2(face, face)), controller.dice.d1)
-		_draw_die(Rect2(Vector2(left + face + gap, y), Vector2(face, face)), controller.dice.d2)
+		var j1 := Vector2.ZERO
+		var j2 := Vector2.ZERO
+		if rolling:  # tumbling: faces flicker and the dice rattle a little
+			var shake := cell * 0.12 * (1.0 - _t / float(_item["dur"]))
+			j1 = Vector2(_rng.randf_range(-shake, shake), _rng.randf_range(-shake, shake))
+			j2 = Vector2(_rng.randf_range(-shake, shake), _rng.randf_range(-shake, shake))
+		_draw_die(Rect2(Vector2(left, y) + j1, Vector2(face, face)), faces.x)
+		_draw_die(Rect2(Vector2(left + face + gap, y) + j2, Vector2(face, face)), faces.y)
 		y += face
 	y += font.get_height(title_size) * 0.4
 	var lines := space_details(selected_index)

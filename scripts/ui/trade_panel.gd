@@ -18,6 +18,8 @@ var _draft: Trade.Offer
 var _cash_steps: Array[int] = []
 ## True while the draft is a counter to the open offer (pickers are locked).
 var _countering := false
+## Offer the body last faded in for, so only a new or closed offer animates.
+var _faded_offer: Trade.Offer = null
 
 
 func setup(controller: TurnController) -> void:
@@ -83,6 +85,9 @@ func refresh() -> void:
 	for p in tc.players:
 		_from_picker.set_item_disabled(_from_picker.get_item_index(p.id), p.is_bankrupt)
 		_to_picker.set_item_disabled(_to_picker.get_item_index(p.id), p.is_bankrupt)
+	if tc.trade_offer != _faded_offer:  # a new or closed offer fades in (P4-DEMO panel motion)
+		_faded_offer = tc.trade_offer
+		UiFx.fade_in(_body, UiStyle.num("panel_fade_seconds", 0.18))
 	if tc.trade_offer != null and not _countering:
 		_show_open_offer(tc.trade_offer)
 		return

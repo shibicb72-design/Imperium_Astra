@@ -7,6 +7,12 @@ extends Control
 ## share of the long side so controls keep room. One canvas unit is about 1 dp on mobile
 ## (DisplayScale). Input comes from touch/mouse buttons or InputMap actions only (roll_dice,
 ## buy_property, end_turn).
+##
+## Motion and dialogue (P4-DEMO): TurnController.game_event feeds BoardView's animation queue
+## (dice tumble, pawn hops, Brig jump) and the DialogueBanner over the board center (theme
+## dialogue.json lines via DialogueLines). Banner lines are queued behind the pawn so they appear
+## when it lands. Turn buttons stay hidden while the board animates; bots wait for the board and
+## for a short banner backlog, then play on the bot timer.
 
 enum Section { HOLDINGS, TRADE, LOG }
 
@@ -43,6 +49,8 @@ var _trade_panel: TradePanel
 var _log_label: Label
 ## Paces bot seats (TurnController.bot_step) so people can follow; data/ui.json bot_step_seconds.
 var _bot_timer: Timer
+var _banner: DialogueBanner
+var _lines: DialogueLines
 
 
 func _ready() -> void:
@@ -61,6 +69,7 @@ func show_setup(window: Window) -> SetupPanel:
 	panel.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(panel)
 	panel.setup(_scale)
+	UiFx.fade_in(panel)
 	panel.start_requested.connect(func(seats: Array[Dictionary]) -> void:
 		remove_child(panel)
 		panel.queue_free()
@@ -93,18 +102,30 @@ func start(window: Window) -> void:
 	add_child(_bot_timer)
 	controller.state_changed.connect(_refresh)
 	controller.status.connect(_on_status)
-	controller.turn_started.connect(func(p: Player) -> void: _holdings_panel.set_actor(p.id))
+	controller.turn_started.connect(_on_turn_started)
 	controller.debt_started.connect(_on_debt_started)
 	controller.trade_proposed.connect(func(_o: Trade.Offer) -> void: show_section(Section.TRADE))
+	controller.game_event.connect(_on_game_event)
+	controller.doubles_extra_turn.connect(func(p: Player) -> void:
+		_say_later(_lines.line("doubles", {"name": p.display_name}), p.color))
+	_board_view.animate = is_inside_tree()
+	_board_view.animation_finished.connect(_refresh, CONNECT_DEFERRED)
+	# Deferred: a line can be pushed mid-rule-step (e.g. inside auction resolution), when the
+	# controller is between phases and bot_actor() must not be asked yet.
+	_banner.line_shown.connect(func(_t: String) -> void: _schedule_bot(), CONNECT_DEFERRED)
+	_banner.emptied.connect(_schedule_bot, CONNECT_DEFERRED)
 	resized.connect(_update_layout)
 	_update_layout()
 	if not controller.log_lines.is_empty():
 		_on_status(controller.log_lines[-1])
+	var first := controller.current_player()
+	_banner.push(_lines.line("match_start", {"name": first.display_name}), first.color)
 	_refresh()
+	UiFx.fade_in(_margin)
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if controller.current_player().is_bot:
+	if controller == null or controller.current_player().is_bot or _board_view.is_animating():
 		return
 	if event.is_action_pressed("roll_dice"):
 		controller.roll()
@@ -140,6 +161,10 @@ func _build_ui() -> void:
 	_board_view.size_flags_vertical = Control.SIZE_FILL
 	_box.add_child(_board_view)
 	_board_view.setup(controller)
+	_lines = DialogueLines.load_theme()
+	_banner = DialogueBanner.new()
+	_board_view.add_child(_banner)  # floats over the board center; never changes the layout
+	_board_view.resized.connect(_place_banner)
 
 	var side := VBoxContainer.new()
 	_side = side
@@ -227,6 +252,8 @@ func _wrap_scroll(parent: Control, content: Control) -> ScrollContainer:
 
 
 func show_section(section: int) -> void:
+	if section != _section:
+		UiFx.fade_in(_sections[section], UiStyle.num("panel_fade_seconds", 0.18))
 	_section = section as Section
 	for i in _sections.size():
 		_sections[i].visible = i == section
@@ -279,15 +306,82 @@ func _on_debt_started(debtor: Player, _creditor_id: int, _amount: int) -> void:
 	show_section(Section.HOLDINGS)
 
 
+func _on_turn_started(p: Player) -> void:
+	_holdings_panel.set_actor(p.id)
+	UiFx.pulse(_turn_label)
+
+
+## Presentation for one game event: dice and pawn motion go to the board queue; the matching
+## banner line is queued behind them so it shows when the pawn lands.
+func _on_game_event(kind: StringName, info: Dictionary) -> void:
+	var pid := int(info.get("player", -1))
+	match kind:
+		&"rolled":
+			_board_view.queue_dice(int(info["d1"]), int(info["d2"]))
+		&"moved":
+			_board_view.queue_move(pid, int(info["from"]), int(info["steps"]))
+			return
+		&"jailed":
+			_board_view.queue_jump(pid, int(info["from"]), int(info["to"]))
+	var color := controller.players[pid].color if pid >= 0 and pid < controller.players.size() else Color.TRANSPARENT
+	_say_later(_lines.event_line(controller, kind, info), color)
+
+
+## Banner line after everything the board has queued so far.
+func _say_later(text: String, color: Color = Color.TRANSPARENT) -> void:
+	if text == "":
+		return
+	_board_view.queue_call(func() -> void: _banner.push(text, color))
+
+
+## The banner sits over the lower middle of the board center (BoardView.banner_rect).
+func _place_banner() -> void:
+	var r := _board_view.banner_rect()
+	_banner.position = r.position
+	_banner.size = r.size
+
+
+## Turn buttons wait while dice and pawns are still moving.
+func is_busy() -> bool:
+	return _board_view.is_animating()
+
+
 ## Starts the bot timer when a bot must act (only in the live tree; tests drive bots directly).
+## Bots also wait for the board to finish moving and for the banner backlog to shrink to
+## data/ui.json bot_wait_banner_queue, so a spectator can follow; both always drain on their own.
 func _schedule_bot() -> void:
-	if is_inside_tree() and _bot_timer.is_stopped() and controller.bot_actor() >= 0:
-		_bot_timer.start()
+	if not is_inside_tree() or not _bot_timer.is_stopped() or controller.bot_actor() < 0:
+		return
+	if is_busy() or _banner.queue_size() > int(UiStyle.num("bot_wait_banner_queue", 1)):
+		return
+	# Bot auction bids rise in small steps; a quicker pace keeps a bot-vs-bot auction short.
+	var auction := controller.phase == TurnController.Phase.AUCTION
+	_bot_timer.start(UiStyle.num("bot_auction_step_seconds" if auction else "bot_step_seconds", 0.1 if auction else 0.7))
 
 
 func _on_bot_timer() -> void:
+	if is_busy():  # something started moving since the timer was set; finishing it reschedules
+		return
 	if controller.bot_step():  # a failed step waits for the next state change instead of spinning
 		_schedule_bot()
+
+
+## Chip suffix: deeds held, buildings on them and pardon cards (" | 3 deeds, 2 bld"), "" when none.
+func _holdings_summary(pl: Player) -> String:
+	var deeds := 0
+	var buildings := 0
+	for s in controller.board.spaces:
+		if s.deed != null and s.deed.owner == pl.id:
+			deeds += 1
+			buildings += 1 if s.deed.has_hotel else s.deed.houses
+	var parts := PackedStringArray()
+	if deeds > 0:
+		parts.append("%d deed%s" % [deeds, "" if deeds == 1 else "s"])
+	if buildings > 0:
+		parts.append("%d bld" % buildings)
+	if not pl.goojf_cards.is_empty():
+		parts.append(controller.board.term("pardon"))
+	return "" if parts.is_empty() else " | " + ", ".join(parts)
 
 
 func _on_status(message: String) -> void:
@@ -298,9 +392,12 @@ func _refresh() -> void:
 	var tc := controller
 	var p := tc.current_player()
 	var phase := tc.phase
-	_turn_label.text = "%s's turn%s" % [p.display_name, " (in %s)" % tc.board.term("jail") if p.in_jail else ""]
+	_turn_label.text = "> %s's turn  [%s]%s" % [p.display_name, "Bot" if p.is_bot else "Human",
+		"  (in %s)" % tc.board.term("jail") if p.in_jail else ""]
+	_turn_label.add_theme_color_override("font_color", p.color.lerp(Color.WHITE, 0.25))
 	if phase == TurnController.Phase.GAME_OVER:
 		_turn_label.text = "Game over"
+		_turn_label.add_theme_color_override("font_color", UiStyle.color("accent"))
 	for i in tc.players.size():
 		var pl := tc.players[i]
 		var mark := "> " if pl == p else ""
@@ -308,7 +405,7 @@ func _refresh() -> void:
 		if pl.is_bankrupt:
 			_player_labels[i].text = "%s%s: bankrupt" % [pl.display_name, bot]
 		else:
-			_player_labels[i].text = "%s%s%s $%d" % [mark, pl.display_name, bot, pl.cash]
+			_player_labels[i].text = "%s%s%s $%d%s" % [mark, pl.display_name, bot, pl.cash, _holdings_summary(pl)]
 	# A bot's own-turn buttons stay hidden; the bot timer plays for it.
 	var awaiting_roll := phase == TurnController.Phase.AWAITING_ROLL and not p.is_bot
 	var deciding := phase == TurnController.Phase.AWAITING_BUY_DECISION and not p.is_bot
@@ -325,7 +422,7 @@ func _refresh() -> void:
 	_fine_button.text = "Pay %s $%d" % [tc.board.term("jail_fine"), tc.config.jail_fine]
 	_fine_button.disabled = p.cash < tc.config.jail_fine
 	_pardon_button.visible = awaiting_roll and p.in_jail and not p.goojf_cards.is_empty()
-	_actions.visible = _actions.get_children().any(func(c: Node) -> bool: return (c as Control).visible)
+	_actions.visible = not is_busy() and _actions.get_children().any(func(c: Node) -> bool: return (c as Control).visible)
 	_auction_panel.refresh()
 	_debt_panel.refresh()
 	_holdings_panel.refresh()

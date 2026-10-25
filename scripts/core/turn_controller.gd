@@ -24,6 +24,15 @@ extends RefCounted
 ## Bots (Player.is_bot): bot_actor() names the bot the game is waiting on; bot_step() asks Bot for
 ## one decision and applies it through the public actions above; run_bots() loops that headless.
 ## The UI paces bot_step() on a timer so people can follow along.
+##
+## game_event(kind, info) is a presentation hook (pawn tweens, dice roll, dialogue banner). It
+## carries ids and numbers only, never theme text; it changes no state. Kinds and info keys:
+## rolled {player, d1, d2, doubles}, moved {player, from, to, steps}, passed_go {player, amount},
+## landed_unowned {player, space, price}, bought {player, space, price}, rent {player, owner,
+## space, amount}, tax {player, space, amount}, card {player, space, deck, text}, jailed {player,
+## from, to}, released {player, how: fine|pardon|doubles|forced}, auction_won {player, space,
+## amount}, auction_unsold {space}, bankrupt {player, creditor}, trade_proposed / trade_accepted /
+## trade_rejected / trade_countered / trade_withdrawn {player, other}, game_over {player}.
 
 signal turn_started(player: Player)
 signal turn_ended(player: Player)
@@ -39,6 +48,7 @@ signal trade_proposed(offer: Trade.Offer)
 signal trade_resolved(offer: Trade.Offer)
 signal status(message: String)
 signal state_changed
+signal game_event(kind: StringName, info: Dictionary)
 
 enum Phase {
 	AWAITING_ROLL, AWAITING_BUY_DECISION, AWAITING_END_TURN, AUCTION, RAISING_FUNDS, GAME_OVER,
@@ -105,6 +115,7 @@ func roll() -> void:
 	dice.roll()
 	_extra_turn_pending = false
 	_say("%s rolled %d + %d." % [p.display_name, dice.d1, dice.d2])
+	_event(&"rolled", {"player": p.id, "d1": dice.d1, "d2": dice.d2, "doubles": dice.is_doubles()})
 	if p.in_jail:
 		_roll_in_jail(p)
 	elif dice.is_doubles() and doubles_streak + 1 >= config.doubles_to_jail:
@@ -127,6 +138,7 @@ func pay_jail_fine() -> bool:
 	bank.collect(p, config.jail_fine)
 	_release(p)
 	_say("%s pays $%d and leaves the Brig." % [p.display_name, config.jail_fine])
+	_event(&"released", {"player": p.id, "how": &"fine"})
 	state_changed.emit()
 	return true
 
@@ -140,6 +152,7 @@ func use_get_out_of_jail_card() -> bool:
 	_deck_for(card.deck_id).return_to_bottom(card)
 	_release(p)
 	_say("%s uses a pardon and leaves the Brig." % p.display_name)
+	_event(&"released", {"player": p.id, "how": &"pardon"})
 	state_changed.emit()
 	return true
 
@@ -152,6 +165,7 @@ func buy() -> bool:
 	if not bank.sell_property(p, deed):
 		return false
 	_say("%s claims %s for $%d." % [p.display_name, board.spaces[pending_buy_index].display_name, deed.list_price])
+	_event(&"bought", {"player": p.id, "space": pending_buy_index, "price": deed.list_price})
 	pending_buy_index = -1
 	_continue()
 	return true
@@ -215,10 +229,12 @@ func _after_auction_step() -> void:
 		var winner := players[a.high_bidder]
 		s.deed.owner = winner.id
 		_say("%s wins %s for $%d." % [winner.display_name, s.display_name, a.high_bid])
+		_event(&"auction_won", {"player": winner.id, "space": s.index, "amount": a.high_bid})
 		# Cash was checked at bid time; anything spent since then becomes a debt to the Bank.
 		_charge(winner, PropertyDeed.BANK, a.high_bid)
 	else:
 		_say("No bids; %s stays with the Bank." % s.display_name)
+		_event(&"auction_unsold", {"space": s.index})
 	auction_ended.emit(a.space_index, a.high_bidder, a.high_bid)
 	_continue()
 
@@ -309,6 +325,7 @@ func propose_trade(offer: Trade.Offer) -> bool:
 		return false
 	trade_offer = offer
 	_say("%s offers %s a trade." % [players[offer.from_id].display_name, players[offer.to_id].display_name])
+	_event(&"trade_proposed", {"player": offer.from_id, "other": offer.to_id})
 	trade_proposed.emit(offer)
 	state_changed.emit()
 	return true
@@ -329,6 +346,7 @@ func accept_trade(player_id: int) -> bool:
 		return false
 	trade_offer = null
 	_say("%s accepts the trade with %s." % [players[offer.to_id].display_name, players[offer.from_id].display_name])
+	_event(&"trade_accepted", {"player": offer.to_id, "other": offer.from_id})
 	if a_interest > 0:
 		_say("%s pays $%d interest to keep the mortgages." % [players[offer.from_id].display_name, a_interest])
 	if b_interest > 0:
@@ -344,6 +362,7 @@ func reject_trade(player_id: int) -> bool:
 		return false
 	trade_offer = null
 	_say("%s rejects the trade." % players[player_id].display_name)
+	_event(&"trade_rejected", {"player": player_id, "other": offer.from_id})
 	trade_resolved.emit(offer)
 	state_changed.emit()
 	return true
@@ -358,6 +377,7 @@ func counter_trade(reply: Trade.Offer) -> bool:
 		return false
 	trade_offer = reply
 	_say("%s makes a counter-offer." % players[reply.from_id].display_name)
+	_event(&"trade_countered", {"player": reply.from_id, "other": reply.to_id})
 	trade_resolved.emit(offer)
 	trade_proposed.emit(reply)
 	state_changed.emit()
@@ -372,6 +392,7 @@ func cancel_trade(player_id: int) -> bool:
 	offer.status = Trade.Status.REJECTED
 	trade_offer = null
 	_say("%s withdraws the trade offer." % players[player_id].display_name)
+	_event(&"trade_withdrawn", {"player": player_id, "other": offer.to_id})
 	trade_resolved.emit(offer)
 	state_changed.emit()
 	return true
@@ -435,6 +456,7 @@ func declare_bankruptcy() -> bool:
 	if debtor == current_player():
 		pending_buy_index = -1
 		_extra_turn_pending = false
+	_event(&"bankrupt", {"player": debtor.id, "creditor": debt.creditor if to_player else PropertyDeed.BANK})
 	player_bankrupt.emit(debtor, debt.creditor if to_player else PropertyDeed.BANK)
 	_check_winner()
 	if phase == Phase.GAME_OVER:
@@ -521,10 +543,15 @@ func end_turn() -> void:
 
 ## Moves forward (or backward when steps < 0). Passing or landing on GO pays salary only forward.
 func move_by(p: Player, steps: int) -> void:
-	if Rules.passes_go(p.position, steps):
+	var from := p.position
+	var passes := Rules.passes_go(p.position, steps)
+	if passes:
 		bank.pay(p, config.go_salary)
 		_say("%s passes %s: +$%d." % [p.display_name, board.spaces[0].display_name, config.go_salary])
 	p.set_position(posmod(p.position + steps, Board.SPACE_COUNT))
+	_event(&"moved", {"player": p.id, "from": from, "to": p.position, "steps": steps})
+	if passes:
+		_event(&"passed_go", {"player": p.id, "amount": config.go_salary})
 
 
 func move_to(p: Player, target: int) -> void:
@@ -536,6 +563,7 @@ func _roll_in_jail(p: Player) -> void:
 		# 6.3 option 3: doubles free you; move with that roll; no extra turn.
 		_release(p)
 		_say("Doubles! %s leaves the Brig." % p.display_name)
+		_event(&"released", {"player": p.id, "how": &"doubles"})
 	else:
 		p.jail_turns_tried += 1
 		if p.jail_turns_tried < config.max_jail_turns:
@@ -545,6 +573,7 @@ func _roll_in_jail(p: Player) -> void:
 		_charge(p, PropertyDeed.BANK, config.jail_fine)
 		_release(p)
 		_say("%s pays $%d after the third try." % [p.display_name, config.jail_fine])
+		_event(&"released", {"player": p.id, "how": &"forced"})
 	move_by(p, dice.total())
 	_resolve_space(p, {"dice_total": dice.total()})
 
@@ -560,6 +589,7 @@ func _resolve_space(p: Player, ctx: Dictionary) -> void:
 			_draw_card(p, community_chest)
 		Space.Type.INCOME_TAX, Space.Type.LUXURY_TAX:
 			_say("%s pays %s: $%d." % [p.display_name, s.display_name, s.tax_amount])
+			_event(&"tax", {"player": p.id, "space": s.index, "amount": s.tax_amount})
 			_charge(p, PropertyDeed.BANK, s.tax_amount)
 		Space.Type.GO_TO_JAIL:
 			_send_to_jail(p, s.display_name)
@@ -578,6 +608,7 @@ func _resolve_property(p: Player, s: Space, ctx: Dictionary) -> void:
 		pending_buy_index = s.index
 		phase = Phase.AWAITING_BUY_DECISION
 		_say("%s is unclaimed: $%d." % [s.display_name, deed.list_price])
+		_event(&"landed_unowned", {"player": p.id, "space": s.index, "price": deed.list_price})
 		return
 	if deed.owner == p.id or deed.is_mortgaged:
 		return
@@ -590,6 +621,7 @@ func _resolve_property(p: Player, s: Space, ctx: Dictionary) -> void:
 		amount *= int(ctx.get("rent_multiplier", 1))
 	var owner := players[deed.owner]
 	_say("%s owes %s $%d rent." % [p.display_name, owner.display_name, amount])
+	_event(&"rent", {"player": p.id, "owner": owner.id, "space": s.index, "amount": amount})
 	rent_requested.emit(owner, p, amount)
 	_charge(p, owner.id, amount)
 
@@ -600,6 +632,7 @@ func _draw_card(p: Player, deck: CardDeck) -> void:
 		return
 	last_card = card
 	_say("%s: %s" % [board.spaces[p.position].display_name, card.text])
+	_event(&"card", {"player": p.id, "space": p.position, "deck": card.deck_id, "text": card.text})
 	if card.is_goojf():
 		p.goojf_cards.append(card)
 	else:
@@ -643,12 +676,14 @@ func _apply_card(p: Player, card: Card) -> void:
 
 
 func _send_to_jail(p: Player, reason: String) -> void:
+	var from := p.position
 	p.set_position(config.jail_index)
 	p.in_jail = true
 	p.jail_turns_tried = 0
 	doubles_streak = 0
 	_extra_turn_pending = false
 	_say("%s is sent to %s (%s)." % [p.display_name, board.spaces[config.jail_index].display_name, reason])
+	_event(&"jailed", {"player": p.id, "from": from, "to": config.jail_index})
 	sent_to_jail.emit(p, reason)
 
 
@@ -690,6 +725,7 @@ func _check_winner() -> void:
 	if alive.size() == 1:
 		phase = Phase.GAME_OVER
 		_say("%s wins!" % alive[0].display_name)
+		_event(&"game_over", {"player": alive[0].id})
 		winner_declared.emit(alive[0])
 
 
@@ -797,6 +833,10 @@ func _apply_bot_action(a: Bot.Action) -> bool:
 			end_turn()
 			return true
 	return false
+
+
+func _event(kind: StringName, info: Dictionary) -> void:
+	game_event.emit(kind, info)
 
 
 func _say(message: String) -> void:
