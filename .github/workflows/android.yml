@@ -12,9 +12,8 @@ permissions:
 env:
   GODOT_VERSION: 4.7.2
   GODOT_RELEASE: 4.7.2-stable
-  # Debug signing only. No key is committed to this repo: CI makes a throwaway debug keystore
-  # each run (standard androiddebugkey / android credentials). Never a release key.
-  GODOT_ANDROID_KEYSTORE_DEBUG_PATH: ${{ github.workspace }}/ci-debug.keystore
+  # Debug signing: use the shared android/debug.keystore committed in-repo (same as local Alienware exports). Never a release key.
+  GODOT_ANDROID_KEYSTORE_DEBUG_PATH: ${{ github.workspace }}/android/debug.keystore
   GODOT_ANDROID_KEYSTORE_DEBUG_USER: androiddebugkey
   GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD: android
 
@@ -84,12 +83,6 @@ jobs:
           export/android/java_sdk_path = "${JAVA_HOME}"
           EOF
 
-      - name: Create throwaway debug keystore
-        run: |
-          keytool -genkeypair -v -keystore "$GODOT_ANDROID_KEYSTORE_DEBUG_PATH" \
-            -storepass android -keypass android -alias androiddebugkey \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=Android Debug,O=Android,C=US"
 
       - name: Create build directory
         run: mkdir -p build
