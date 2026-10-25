@@ -15,6 +15,8 @@ var in_jail: bool = false
 var jail_turns_tried: int = 0
 var goojf_cards: Array[Card] = []
 var is_bankrupt: bool = false
+## Seat played by Bot (TurnController.bot_step) instead of a person.
+var is_bot: bool = false
 
 
 func add_cash(amount: int) -> void:

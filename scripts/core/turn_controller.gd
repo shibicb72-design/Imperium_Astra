@@ -20,6 +20,10 @@ extends RefCounted
 ##   use_get_out_of_jail_card (before rolling, AWAITING_ROLL), buy/decline, end_turn.
 ## - Auction bids follow the auction's own bidder order; jailed commanders bid too.
 ## - pay_debt / declare_bankruptcy belong to whoever owes pending_debts[0], on or off turn.
+##
+## Bots (Player.is_bot): bot_actor() names the bot the game is waiting on; bot_step() asks Bot for
+## one decision and applies it through the public actions above; run_bots() loops that headless.
+## The UI paces bot_step() on a timer so people can follow along.
 
 signal turn_started(player: Player)
 signal turn_ended(player: Player)
@@ -59,6 +63,8 @@ var auction: Auction = null
 var pending_debts: Array[Bankruptcy.Debt] = []
 ## The open trade offer awaiting its receiver, or null. One at a time.
 var trade_offer: Trade.Offer = null
+## Heuristics for bot seats (data/bot.json); see Bot and bot_step().
+var bot_settings: Bot.Settings = null
 
 var _extra_turn_pending := false
 var _auction_queue: Array[int] = []
@@ -686,6 +692,100 @@ func _check_winner() -> void:
 
 func _deck_for(deck_id: StringName) -> CardDeck:
 	return chance if deck_id == chance.deck_id else community_chest
+
+
+# --- Bots (decisions: Bot) ------------------------------------------------------------------
+
+## Who the game waits on: the debtor, the auction bidder, else the current player (-1 at game over).
+func deciding_player() -> int:
+	match phase:
+		Phase.GAME_OVER:
+			return -1
+		Phase.RAISING_FUNDS:
+			return current_debt().debtor
+		Phase.AUCTION:
+			return auction.current_bidder()
+	return current_index
+
+
+## The bot that must act now, or -1. A trade offer to a bot is answered first.
+func bot_actor() -> int:
+	if phase == Phase.GAME_OVER:
+		return -1
+	if trade_offer != null and players[trade_offer.to_id].is_bot:
+		return trade_offer.to_id
+	var id := deciding_player()
+	return id if id >= 0 and players[id].is_bot else -1
+
+
+## One bot decision, applied through the public actions. False if no bot is up or it failed.
+func bot_step() -> bool:
+	var id := bot_actor()
+	if id < 0 or bot_settings == null:
+		return false
+	var action := Bot.decide(self, id)
+	if _apply_bot_action(action):
+		return true
+	push_warning("Bot %d could not apply action %s in phase %s" % [id, Bot.Kind.keys()[action.kind], Phase.keys()[phase]])
+	return false
+
+
+## Steps bots until a person is up, the game ends, a step fails or max_steps run out.
+## Returns the number of steps taken.
+func run_bots(max_steps: int = 100000) -> int:
+	var steps := 0
+	while steps < max_steps and bot_step():
+		steps += 1
+	return steps
+
+
+func _apply_bot_action(a: Bot.Action) -> bool:
+	var pid := a.player_id
+	match a.kind:
+		Bot.Kind.ROLL:
+			if phase != Phase.AWAITING_ROLL:
+				return false
+			roll()
+			return true
+		Bot.Kind.PAY_JAIL_FINE:
+			return pay_jail_fine()
+		Bot.Kind.USE_PARDON:
+			return use_get_out_of_jail_card()
+		Bot.Kind.BUY:
+			return buy()
+		Bot.Kind.DECLINE:
+			if phase != Phase.AWAITING_BUY_DECISION:
+				return false
+			decline()
+			return true
+		Bot.Kind.BID:
+			return auction_bid(a.amount)
+		Bot.Kind.PASS_AUCTION:
+			return auction_pass()
+		Bot.Kind.BUILD:
+			return build(pid, a.space_index)
+		Bot.Kind.SELL_BUILDING:
+			return sell_building(pid, a.space_index)
+		Bot.Kind.SELL_GROUP:
+			return sell_group_buildings(pid, a.group_id)
+		Bot.Kind.MORTGAGE:
+			return mortgage(pid, a.space_index)
+		Bot.Kind.UNMORTGAGE:
+			return unmortgage(pid, a.space_index)
+		Bot.Kind.PAY_DEBT:
+			return pay_debt()
+		Bot.Kind.DECLARE_BANKRUPTCY:
+			return declare_bankruptcy()
+		Bot.Kind.ACCEPT_TRADE:
+			return accept_trade(pid)
+		Bot.Kind.REJECT_TRADE:
+			return reject_trade(pid)
+		Bot.Kind.END_TURN:
+			if phase != Phase.AWAITING_END_TURN:
+				return false
+			end_turn()
+			return true
+	return false
 
 
 func _say(message: String) -> void:

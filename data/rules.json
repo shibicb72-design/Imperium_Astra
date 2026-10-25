@@ -20,6 +20,14 @@
   "max_players": 6,
   "local_players": [
     {"display_name": "Commander 1", "color": "#4fc3f7", "_placeholder": true, "TODO": "P0 hotseat names/colors are placeholders; player setup screen not designed yet (docs/OPEN_QUESTIONS.md Q1)"},
-    {"display_name": "Commander 2", "color": "#ff8a65", "_placeholder": true}
+    {"display_name": "Commander 2", "color": "#ff8a65", "is_bot": true, "_placeholder": true, "TODO": "default 1 human + 1 bot for smoke (docs/OPEN_QUESTIONS.md Q19)"}
+  ],
+  "seat_pool": [
+    {"display_name": "Commander 1", "color": "#4fc3f7", "_placeholder": true, "TODO": "names/colors for GameSetup.seats(); setup screen not designed (docs/OPEN_QUESTIONS.md Q19)"},
+    {"display_name": "Commander 2", "color": "#ff8a65", "_placeholder": true},
+    {"display_name": "Commander 3", "color": "#aed581", "_placeholder": true},
+    {"display_name": "Commander 4", "color": "#ce93d8", "_placeholder": true},
+    {"display_name": "Commander 5", "color": "#fff176", "_placeholder": true},
+    {"display_name": "Commander 6", "color": "#90a4ae", "_placeholder": true}
   ]
 }

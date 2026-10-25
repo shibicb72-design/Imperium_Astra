@@ -1,0 +1,9 @@
+{
+  "_doc": "Tunables for the simple hotseat bot (scripts/core/bot.gd). Not rule numbers: themes never edit this file. cash_buffer: cash the bot keeps after buying, bidding, building or paying the jail fine. auction_max_price_percent: highest bid as a percent of the deed's list price. unmortgage_min_cash_after: cash the bot must still hold after lifting a mortgage. trade_min_cash_percent: the bot accepts a cash-for-deed offer only if the cash is at least this percent of the deeds' list prices.",
+  "_placeholder": true,
+  "TODO": "Heuristic values are first guesses, not product decisions (docs/OPEN_QUESTIONS.md Q18).",
+  "cash_buffer": 200,
+  "auction_max_price_percent": 100,
+  "unmortgage_min_cash_after": 500,
+  "trade_min_cash_percent": 150
+}

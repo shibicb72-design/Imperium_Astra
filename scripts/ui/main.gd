@@ -42,6 +42,8 @@ var _section: Section = Section.HOLDINGS
 var _holdings_panel: HoldingsPanel
 var _trade_panel: TradePanel
 var _log_label: Label
+## Paces bot seats (TurnController.bot_step) so people can follow; data/ui.json bot_step_seconds.
+var _bot_timer: Timer
 
 
 func _ready() -> void:
@@ -56,6 +58,11 @@ func start(window: Window) -> void:
 	if controller == null:
 		controller = GameState.new_local_game()
 	_build_ui()
+	_bot_timer = Timer.new()
+	_bot_timer.one_shot = true
+	_bot_timer.wait_time = UiStyle.num("bot_step_seconds", 0.4)
+	_bot_timer.timeout.connect(_on_bot_timer)
+	add_child(_bot_timer)
 	controller.state_changed.connect(_refresh)
 	controller.status.connect(_on_status)
 	controller.turn_started.connect(func(p: Player) -> void: _holdings_panel.set_actor(p.id))
@@ -69,6 +76,8 @@ func start(window: Window) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if controller.current_player().is_bot:
+		return
 	if event.is_action_pressed("roll_dice"):
 		controller.roll()
 	elif event.is_action_pressed("buy_property"):
@@ -246,6 +255,17 @@ func _on_debt_started(debtor: Player, _creditor_id: int, _amount: int) -> void:
 	show_section(Section.HOLDINGS)
 
 
+## Starts the bot timer when a bot must act (only in the live tree; tests drive bots directly).
+func _schedule_bot() -> void:
+	if is_inside_tree() and _bot_timer.is_stopped() and controller.bot_actor() >= 0:
+		_bot_timer.start()
+
+
+func _on_bot_timer() -> void:
+	if controller.bot_step():  # a failed step waits for the next state change instead of spinning
+		_schedule_bot()
+
+
 func _on_status(message: String) -> void:
 	_status_label.text = message
 
@@ -260,12 +280,14 @@ func _refresh() -> void:
 	for i in tc.players.size():
 		var pl := tc.players[i]
 		var mark := "> " if pl == p else ""
+		var bot := " (bot)" if pl.is_bot else ""
 		if pl.is_bankrupt:
-			_player_labels[i].text = "%s: bankrupt" % pl.display_name
+			_player_labels[i].text = "%s%s: bankrupt" % [pl.display_name, bot]
 		else:
-			_player_labels[i].text = "%s%s $%d" % [mark, pl.display_name, pl.cash]
-	var awaiting_roll := phase == TurnController.Phase.AWAITING_ROLL
-	var deciding := phase == TurnController.Phase.AWAITING_BUY_DECISION
+			_player_labels[i].text = "%s%s%s $%d" % [mark, pl.display_name, bot, pl.cash]
+	# A bot's own-turn buttons stay hidden; the bot timer plays for it.
+	var awaiting_roll := phase == TurnController.Phase.AWAITING_ROLL and not p.is_bot
+	var deciding := phase == TurnController.Phase.AWAITING_BUY_DECISION and not p.is_bot
 	_roll_button.visible = awaiting_roll
 	_roll_button.text = "Roll for doubles" if p.in_jail else "Roll Dice"
 	_buy_button.visible = deciding
@@ -274,7 +296,7 @@ func _refresh() -> void:
 		var s := tc.board.spaces[tc.pending_buy_index]
 		_buy_button.text = "%s %s $%d" % [tc.board.term("buy"), s.short_name, s.deed.list_price]
 		_buy_button.disabled = p.cash < s.deed.list_price
-	_end_button.visible = phase == TurnController.Phase.AWAITING_END_TURN
+	_end_button.visible = phase == TurnController.Phase.AWAITING_END_TURN and not p.is_bot
 	_fine_button.visible = awaiting_roll and p.in_jail
 	_fine_button.text = "Pay %s $%d" % [tc.board.term("jail_fine"), tc.config.jail_fine]
 	_fine_button.disabled = p.cash < tc.config.jail_fine
@@ -290,3 +312,4 @@ func _refresh() -> void:
 	_log_label.text = "\n".join(PackedStringArray(lines))
 	_board_view.queue_redraw()
 	_update_layout()
+	_schedule_bot()

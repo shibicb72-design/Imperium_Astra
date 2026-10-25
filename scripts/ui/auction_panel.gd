@@ -57,6 +57,7 @@ func refresh() -> void:
 		var b := _bid_buttons[i]
 		b.text = "Bid $%d" % amount
 		b.visible = amount != last
-		b.disabled = amount > bidder.cash
+		b.disabled = amount > bidder.cash or bidder.is_bot
 		last = amount
 	_pass_button.text = "Drop Out (%s)" % bidder.display_name
+	_pass_button.disabled = bidder.is_bot  # bots bid on their own (TurnController.bot_step)

@@ -25,7 +25,13 @@ No trademarked names, art or logos are used; the theme is a pure data swap (`doc
     value at once and keeps the mortgage; a trade whose interest a side cannot pay is refused.
   - `TurnController` only sequences them (debts -> auctions -> buy decision -> end of landing).
 - Not yet: building-shortage auctions. See `docs/OPEN_QUESTIONS.md`.
-- Play mode: **2-player local hotseat** (both seats human, one device). The Holdings panel lets
+- P2 bots (`bot.gd`, `data/bot.json`): optional AI seats (`Player.is_bot`). `Bot.decide()` only
+  reads the match and returns one action; `TurnController.bot_step()` applies it through the same
+  public actions people use, so bots follow every rule check. The UI plays bot steps on a timer
+  (`data/ui.json` `bot_step_seconds`). Heuristics: buy / bid / build only while $200 stays, bid up
+  to list price, even-build the cheapest street, mortgage only to pay debts, refuse all trades but
+  clearly +EV cash-for-deed offers. Seats: `GameSetup.seats(humans, bots)` (2-6 total).
+- Play mode: **2-player local hotseat** (default: Commander 1 human, Commander 2 bot; one device). The Holdings panel lets
   any commander build / sell / mortgage at any time, and the Trade panel lets any two active
   commanders trade at any time (also off-turn, in the Brig, or while raising funds), as the
   official rules allow.

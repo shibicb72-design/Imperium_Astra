@@ -23,6 +23,8 @@ var free_parking_jackpot: bool
 var min_players: int
 var max_players: int
 var local_players: Array[Dictionary] = []
+## Seat names / colors for GameSetup.seats() (custom human / bot mixes), max_players entries.
+var seat_pool: Array[Dictionary] = []
 
 
 static func from_dict(d: Dictionary) -> RulesConfig:
@@ -49,4 +51,6 @@ static func from_dict(d: Dictionary) -> RulesConfig:
 	c.max_players = int(d["max_players"])
 	for p in d["local_players"]:
 		c.local_players.append(p)
+	for p in d.get("seat_pool", []):
+		c.seat_pool.append(p)
 	return c

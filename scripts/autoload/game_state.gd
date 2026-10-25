@@ -5,7 +5,8 @@ extends Node
 var controller: TurnController = null
 
 
-func new_local_game(rng_seed: int = -1) -> TurnController:
-	controller = GameSetup.new_game(rng_seed)
+## `seats` from GameSetup.seats(humans, bots); empty uses rules.json local_players.
+func new_local_game(rng_seed: int = -1, seats: Array[Dictionary] = []) -> TurnController:
+	controller = GameSetup.new_game(rng_seed, seats)
 	controller.determine_start_player()
 	return controller

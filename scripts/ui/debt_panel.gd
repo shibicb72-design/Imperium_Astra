@@ -36,5 +36,6 @@ func refresh() -> void:
 		debtor.display_name, creditor, debt.amount, debtor.cash,
 		Bankruptcy.max_raisable(tc.board, debtor, tc.config)]
 	_pay_button.text = "Pay $%d (%s)" % [debt.amount, debtor.display_name]
-	_pay_button.disabled = debtor.cash < debt.amount
-	_bankrupt_button.disabled = not tc.can_declare_bankruptcy()
+	# Bots raise funds and pay on their own (TurnController.bot_step).
+	_pay_button.disabled = debtor.cash < debt.amount or debtor.is_bot
+	_bankrupt_button.disabled = not tc.can_declare_bankruptcy() or debtor.is_bot
