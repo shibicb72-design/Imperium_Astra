@@ -25,6 +25,7 @@ const FIXTURE_INDEX := "res://tests/fixtures/themes/index.json"
 
 
 func teardown() -> void:
+	Engine.print_error_messages = true
 	UiStyle.reset_theme()
 
 
@@ -83,6 +84,11 @@ static func _card_ids() -> Array[String]:
 		for c: Dictionary in cards.get(deck, []):
 			out.append(String(c["card_id"]))
 	return out
+
+
+## Seats a pack's seat_names must name: data/rules.json seat_pool.
+static func _seat_count() -> int:
+	return RulesConfig.from_dict(JsonData.load_json(GameSetup.RULES_PATH)).seat_pool.size()
 
 
 func test_theme_loads_from_ui_json_path() -> void:
@@ -180,19 +186,49 @@ func test_every_pack_file_presentation_only() -> void:
 	done()
 
 
-## A5: every registered pack's content overlay names every term, space and group (no default-pack
-## word can leak through), uses only whitelisted keys and matches its pack id; card_text optional.
+## A5: every registered pack's content overlay names every term, space, group and seat (dig 3c:
+## one seat_names entry per rules.json seat_pool seat), so no default-pack word can leak through;
+## it uses only whitelisted keys and matches its pack id; card_text stays optional.
 func test_every_pack_has_complete_content_overlay() -> void:
 	var board := Board.from_dict(JsonData.load_json(GameSetup.BOARD_PATH))
 	var card_ids := _card_ids()
+	var seat_count := _seat_count()
+	check(not _pack_ids().is_empty(), "registered packs to check")
 	for id in _pack_ids():
 		check(UiStyle.set_theme(id), "%s: set_theme" % id)
 		var path := String(_theme().get("content_path", ""))
 		check(path != "" and FileAccess.file_exists(path), "%s: content_path set and present" % id)
+		check_eq(UiStyle.content_problem(_theme()), "", "%s: content overlay readable" % id)
 		var overlay := UiStyle.content_overlay()
 		check_eq(String(overlay.get("id", "")), id, "%s: content id matches pack id" % id)
-		check_eq(ContentOverlay.problems(overlay, board, card_ids, true), [] as Array[String],
+		check_eq(ContentOverlay.problems(overlay, board, card_ids, seat_count, true), [] as Array[String],
 				"%s: content overlay complete and valid" % id)
+	done()
+
+
+## Dig 3c (Track B nit 3): a pack that cannot supply its content overlay is a loud problem, not a
+## quiet {}: UiStyle.content_overlay() push_errors content_problem() (JsonData push_errors a file
+## that is not a JSON object) and the match falls back to the shared words. Every registered pack
+## passes (test above), so a registered pack never takes that path.
+func test_missing_content_is_a_loud_problem() -> void:
+	check(UiStyle.content_problem({}).contains("no content_path"), "pack without content_path flagged")
+	check(UiStyle.content_problem({"content_path": ""}).contains("no content_path"), "empty content_path flagged")
+	check(UiStyle.content_problem({"content_path": 7}).contains("no content_path"), "non-string content_path flagged")
+	var missing := "res://tests/fixtures/themes/no_such_pack/content.json"
+	check(UiStyle.content_problem({"content_path": missing}).contains("does not exist"), "missing content file flagged")
+	var fixture := "res://tests/fixtures/themes/test_alt/content.json"
+	check_eq(UiStyle.content_problem({"content_path": fixture}), "", "present content file passes")
+	check(not UiStyle.content_overlay().is_empty(), "default pack overlay loads")
+	# Active pack without readable content (cached pack swapped in; teardown reloads the default).
+	# Its push_error is expected, so error printing is off around the two calls only.
+	Engine.print_error_messages = false
+	UiStyle._theme = {"id": "test_broken"}
+	var no_path := UiStyle.content_overlay()
+	UiStyle._theme = {"id": "test_broken", "content_path": missing}
+	var no_file := UiStyle.content_overlay()
+	Engine.print_error_messages = true
+	check(no_path.is_empty(), "pack without content_path gets {} (shared words), after a push_error")
+	check(no_file.is_empty(), "pack with a missing content file gets {} (shared words), after a push_error")
 	done()
 
 

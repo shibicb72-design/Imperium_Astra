@@ -1,6 +1,7 @@
 {
-  "_doc": "Imperium Astra content overlay (P5-FEEL A5), applied at match start by GameSetup.new_game(). Words only: terms, space_names (keyed by space index; display_name + optional short_name), group_names (keyed by group id), optional card_text (keyed by card_id; omitted here, so data/cards.json text is used). No prices, rents, space types, opcodes or colors. Every registered pack names every term, space and group (tests/test_theme.gd). This default pack matches data/board.json word for word. See docs/THEME_MAP.md.",
+  "_doc": "Imperium Astra content overlay (P5-FEEL A5), applied at match start by GameSetup.new_game(). Words only: terms, space_names (keyed by space index; display_name + optional short_name), group_names (keyed by group id), seat_names (default seat names in seat order, one per data/rules.json seat_pool seat; the setup screen names seats from them; 'Commander N' are placeholders, TODO docs/OPEN_QUESTIONS.md Q1), optional card_text (keyed by card_id; omitted here, so data/cards.json text is used). No prices, rents, space types, opcodes, colors or bot flags. Every registered pack names every term, space, group and seat (tests/test_theme.gd). This default pack matches data/board.json and the rules.json seat_pool names word for word. See docs/THEME_MAP.md.",
   "id": "imperium_astra",
+  "seat_names": ["Commander 1", "Commander 2", "Commander 3", "Commander 4", "Commander 5", "Commander 6"],
   "terms": {
     "house": "outpost module", "houses": "outpost modules", "hotel": "Citadel",
     "chance": "Mission Brief", "community_chest": "Senate Dispatch",

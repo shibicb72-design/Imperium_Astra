@@ -93,7 +93,10 @@ folder and one index entry. Covered by `tests/test_theme_switch.gd`.
 Each pack's `theme.json` names a `content_path` (e.g. `data/themes/imperium_astra/content.json`)
 holding the pack's words. `Main.begin_match` reads it via `UiStyle.content_overlay()` and passes it
 to `GameSetup.new_game(seed, seats, content)`, which applies it once at match start
-(`scripts/core/content_overlay.gd`); core never reads `UiStyle` or `data/ui.json`. Whitelisted
+(`scripts/core/content_overlay.gd`); core never reads `UiStyle` or `data/ui.json`. The setup
+screen names the seats from the same overlay (`GameSetup.seats_for(flags, content)`). A pack with
+no `content_path` or a missing / unreadable content file fails loudly (`push_error`,
+`UiStyle.content_problem`) and the match falls back to the shared words. Whitelisted
 top-level keys only (none collide with the rules keys `spaces` / `groups` / `cards` / ...):
 
 | Key | Shape | Replaces |
@@ -101,12 +104,15 @@ top-level keys only (none collide with the rules keys `spaces` / `groups` / `car
 | `terms` | `{term key: text}` | `board.json` `terms` |
 | `space_names` | `{"<space index>": {display_name, short_name?}}` | space names (`short_name` defaults to the new `display_name`) |
 | `group_names` | `{group id: text}` | group `display_name` (group colors stay in `board.json`) |
+| `seat_names` | `[text, ...]`, one per `rules.json` `seat_pool` seat, in seat order | default seat names (`seat_pool` / `local_players` `display_name`; seat colors and Human/Bot stay out of packs; names a caller passes in are kept) |
 | `card_text` | `{card_id: text}` (optional) | card text from `cards.json` |
 
 Prices, rents, space types, opcodes and group colors never appear in a pack (one shared classic
 `rules.json` / `board.json` / `cards.json`). Every registered pack's overlay must name every term,
-space and group so no default-pack word leaks (`tests/test_theme.gd`); `card_text` may be partial.
-The default pack's overlay matches `board.json` word for word. Log and trade-message flavor in
+space, group and seat so no default-pack word leaks through them (`tests/test_theme.gd`);
+`card_text` is optional per card, and a card a pack leaves out keeps the shared `cards.json` text,
+which uses the default pack's words. The default pack's overlay matches `board.json` and the
+`rules.json` `seat_pool` names word for word. Log and trade-message flavor in
 core goes through `board.term(...)`: `jail`, `bank`, `pardon`, `buys` ("claims"), `unowned`
 ("unclaimed"), `player` / `players` ("commander(s)"); `tests/test_content_overlay.gd` plays a
 seeded game under the test fixture pack and checks that no default-pack word appears.

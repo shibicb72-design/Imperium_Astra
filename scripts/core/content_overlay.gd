@@ -1,16 +1,21 @@
 class_name ContentOverlay
 extends RefCounted
-## Theme pack content overlay (P5-FEEL A5): words only, applied once at match start by
-## GameSetup.new_game(). The caller passes the overlay dictionary in (Main reads the active pack's
-## content_path); core never reads UiStyle or data/ui.json. Shape (whitelisted top-level keys only,
-## none of them rules keys; see docs/THEME_MAP.md):
+## Theme pack content overlay (P5-FEEL A5): words only. The caller passes the overlay dictionary in
+## (Main and the setup screen read the active pack's content_path); core never reads UiStyle or
+## data/ui.json. GameSetup.new_game() applies it once at match start (apply()); seat_names name the
+## default seats when they are built (name_seats(): GameSetup.seats_for() for the setup screen and
+## new_game()'s local_players fallback). Shape (whitelisted top-level keys only, none of them rules
+## keys; see docs/THEME_MAP.md):
 ##   terms:       {term key: String}                         -> Board.terms
 ##   space_names: {"<index>": {display_name, short_name?}}   -> Space display_name / short_name
 ##   group_names: {group id: String}                         -> Board.group_info display_name
+##   seat_names:  [String, ...]  (seat order, one per rules.json seat_pool seat)
+##                                   -> default seat display_name (name_seats(), not apply())
 ##   card_text:   {card_id: String}  (optional)              -> Card.text
-## Prices, rents, space types, opcodes and group colors stay in the shared classic data.
+## Prices, rents, space types, opcodes and group colors stay in the shared classic data; seat
+## colors and Human/Bot flags stay in rules.json and the seat choice.
 
-const KEYS: Array[String] = ["_doc", "id", "terms", "space_names", "group_names", "card_text"]
+const KEYS: Array[String] = ["_doc", "id", "terms", "space_names", "group_names", "seat_names", "card_text"]
 const SPACE_NAME_KEYS: Array[String] = ["display_name", "short_name"]
 
 
@@ -50,14 +55,30 @@ static func apply(overlay: Dictionary, board: Board, decks: Array[CardDeck]) -> 
 	if card_text is Dictionary:
 		for deck in decks:
 			for c in deck.draw_pile:
-				if card_text.get(String(c.card_id)) is String:
-					c.text = card_text[String(c.card_id)]
+				var text: Variant = card_text.get(String(c.card_id))
+				if text is String and not String(text).is_empty():
+					c.text = text
 
 
-## Schema problems in `overlay` against the shared data (empty = valid). With `complete`, the
-## overlay must also name every term, space and group so no default-pack word leaks through
-## (every registered pack's overlay is complete; card_text stays optional either way).
-static func problems(overlay: Dictionary, board: Board, card_ids: Array[String], complete: bool) -> Array[String]:
+## Copies of the default seat specs (rules.json seat_pool / local_players, in seat order) with seat
+## i named seat_names[i] when that is a non-empty string; other seats and every other field (color,
+## is_bot) stay as given. Callers pass default seats only, so a name a caller picked is kept.
+static func name_seats(overlay: Dictionary, specs: Array[Dictionary]) -> Array[Dictionary]:
+	var names: Variant = overlay.get("seat_names", [])
+	var out: Array[Dictionary] = []
+	for i in specs.size():
+		var spec := specs[i].duplicate()
+		if names is Array and i < names.size() and names[i] is String and not String(names[i]).is_empty():
+			spec["display_name"] = names[i]
+		out.append(spec)
+	return out
+
+
+## Schema problems in `overlay` against the shared data (empty = valid); `seat_count` is the size of
+## rules.json seat_pool. With `complete`, the overlay must also name every term, space, group and
+## seat so no default-pack word leaks through (every registered pack's overlay is complete;
+## card_text stays optional either way).
+static func problems(overlay: Dictionary, board: Board, card_ids: Array[String], seat_count: int, complete: bool) -> Array[String]:
 	var out: Array[String] = []
 	for k: Variant in overlay:
 		if not (String(k) in KEYS):
@@ -94,6 +115,17 @@ static func problems(overlay: Dictionary, board: Board, card_ids: Array[String],
 			out.append("group_names key '%s' is not a group" % gid)
 		elif not group_names[gid] is String or String(group_names[gid]).is_empty():
 			out.append("group_names '%s' is not a non-empty string" % gid)
+	var seat_names: Variant = overlay.get("seat_names", [])
+	if not seat_names is Array:
+		out.append("seat_names is not a list")
+		seat_names = []
+	if seat_names.size() > seat_count:
+		out.append("seat_names has %d names for %d seats" % [seat_names.size(), seat_count])
+	for i in seat_names.size():
+		if not seat_names[i] is String or String(seat_names[i]).is_empty():
+			out.append("seat_names[%d] is not a non-empty string" % i)
+		elif seat_names.find(seat_names[i]) < i:
+			out.append("seat_names[%d] repeats '%s'" % [i, seat_names[i]])
 	var card_text: Variant = overlay.get("card_text", {})
 	if not card_text is Dictionary:
 		out.append("card_text is not an object")
@@ -114,6 +146,8 @@ static func problems(overlay: Dictionary, board: Board, card_ids: Array[String],
 		for gid: StringName in board.group_info:
 			if not group_names.has(String(gid)):
 				out.append("missing group_names '%s'" % gid)
+		for i in range(seat_names.size(), seat_count):
+			out.append("missing seat_names[%d]" % i)
 	return out
 
 

@@ -1,6 +1,7 @@
 {
-  "_doc": "Test-only content overlay for the test_alt fixture pack (not shipped, not a real theme). Every word differs from imperium_astra so a leak of default-pack words is detectable. tests/test_content_overlay.gd adds card_text for the remaining cards in code.",
+  "_doc": "Test-only content overlay for the test_alt fixture pack (not shipped, not a real theme). Every word differs from imperium_astra (seat names included) so a leak of default-pack words is detectable. card_text names one card only, so the other cards keep data/cards.json text; tests/test_content_overlay.gd adds card_text for the remaining cards in code where it needs a leak-free game.",
   "id": "test_alt",
+  "seat_names": ["T Seat 1", "T Seat 2", "T Seat 3", "T Seat 4", "T Seat 5", "T Seat 6"],
   "terms": {
     "house": "t-house", "houses": "t-houses", "hotel": "t-hotel",
     "chance": "t-chance", "community_chest": "t-chest",

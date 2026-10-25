@@ -111,7 +111,8 @@ func apply_theme() -> void:
 
 
 ## New local match with the chosen seats (rng_seed < 0: random), then the board screen. The active
-## pack's content overlay (terms, space / group names, card text) is applied here, at match start.
+## pack's content overlay (terms, space / group names, card text) is applied here, at match start;
+## the setup screen already named the seats from the same overlay (SetupPanel.seats()).
 func begin_match(seats: Array[Dictionary], window: Window, rng_seed: int = -1) -> void:
 	controller = GameSetup.new_game(rng_seed, seats, UiStyle.content_overlay())
 	controller.determine_start_player()

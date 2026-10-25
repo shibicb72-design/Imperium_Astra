@@ -3,6 +3,8 @@ extends TestCase
 ## the overlay passed in (terms, space / group names, card text by card_id) without touching rules
 ## data; core never reads UiStyle / ui.json; Main passes the active pack's overlay at match start;
 ## with a non-default overlay no default-pack word reaches the log, board or trade messages.
+## Dig 3c: seat names are pack words too (seat_names, via GameSetup.seats_for / the setup screen),
+## and card_text is an optional per-card override (cards a pack leaves out keep cards.json text).
 ## The second pack is the test-only fixture (tests/fixtures/themes/test_alt); teardown restores
 ## the shipped default pack.
 
@@ -29,6 +31,27 @@ static func _card_ids() -> Array[String]:
 	return out
 
 
+## card_id -> the shared data/cards.json text.
+static func _shared_card_text() -> Dictionary:
+	var out := {}
+	var cards := JsonData.load_json(GameSetup.CARDS_PATH)
+	for deck in ["chance", "community_chest"]:
+		for c: Dictionary in cards.get(deck, []):
+			out[String(c["card_id"])] = String(c["text"])
+	return out
+
+
+static func _seat_pool() -> Array[Dictionary]:
+	return RulesConfig.from_dict(JsonData.load_json(GameSetup.RULES_PATH)).seat_pool
+
+
+static func _logged(tc: TurnController, text: String) -> bool:
+	for line in tc.log_lines:
+		if line.contains(text):
+			return true
+	return false
+
+
 ## Fixture overlay plus card_text for every card, so no default-pack word is left anywhere.
 static func _full_fixture() -> Dictionary:
 	var o := JsonData.load_json(FIXTURE_CONTENT)
@@ -39,7 +62,7 @@ static func _full_fixture() -> Dictionary:
 	return o
 
 
-## Every word the default pack overlay supplies (terms, space and group names).
+## Every word the default pack overlay supplies (terms, space, group and seat names).
 static func _default_words() -> Array[String]:
 	var words: Array[String] = []
 	var d := JsonData.load_json(DEFAULT_CONTENT)
@@ -50,6 +73,8 @@ static func _default_words() -> Array[String]:
 	for k: String in d["space_names"]:
 		for f: String in d["space_names"][k]:
 			words.append(String(d["space_names"][k][f]))
+	for n: Variant in d.get("seat_names", []):
+		words.append(String(n))
 	return words
 
 
@@ -60,8 +85,9 @@ static func _seats() -> Array[Dictionary]:
 
 func test_default_overlay_matches_board_json() -> void:
 	var base := _base_board()
+	var pool := _seat_pool()
 	var d := JsonData.load_json(DEFAULT_CONTENT)
-	check_eq(ContentOverlay.problems(d, base, _card_ids(), true), [] as Array[String], "default overlay valid")
+	check_eq(ContentOverlay.problems(d, base, _card_ids(), pool.size(), true), [] as Array[String], "default overlay valid")
 	check_eq(d["terms"], base.terms, "terms match board.json")
 	for i in base.spaces.size():
 		var e: Dictionary = d["space_names"][str(i)]
@@ -69,8 +95,15 @@ func test_default_overlay_matches_board_json() -> void:
 		check_eq(e.get("short_name", e["display_name"]), base.spaces[i].short_name, "space %d short name matches" % i)
 	for gid: StringName in base.group_info:
 		check_eq(d["group_names"][String(gid)], base.group_info[gid]["display_name"], "group %s matches" % gid)
+	var seat_names: Array = d.get("seat_names", [])
+	check_eq(seat_names.size(), pool.size(), "one seat name per rules.json seat_pool seat")
+	for i in mini(seat_names.size(), pool.size()):
+		check_eq(seat_names[i], pool[i]["display_name"], "seat %d name matches seat_pool" % (i + 1))
 	var tc := GameSetup.new_game(1234, [], d)
+	var plain := GameSetup.new_game(1234)
 	check_eq(tc.board.spaces[0].display_name, base.spaces[0].display_name, "default overlay changes nothing")
+	for i in plain.players.size():
+		check_eq(tc.players[i].display_name, plain.players[i].display_name, "default overlay keeps seat %d name" % (i + 1))
 	done()
 
 
@@ -114,25 +147,132 @@ func test_overlay_never_changes_rules_data() -> void:
 		"cards": {"chance": []},
 		"space_names": {"1": {"display_name": "X", "list_price": 1}, "40": {"display_name": "Y"}, "abc": {}},
 		"group_names": {"no_group": "Z"},
-		"card_text": {"no_card": "W"},
+		"seat_names": ["S", "S", 7, "", "a", "b", "c"],
+		"card_text": {"no_card": "W", "ch_advance_go": ""},
 	}
+	var seat_count := _seat_pool().size()
 	var tc := GameSetup.new_game(1234, [], bad)
 	check_eq(tc.board.spaces[1].display_name, "X", "name applied")
 	check_eq(tc.board.spaces[1].list_price, base.spaces[1].list_price, "price key inside space_names ignored")
 	check_eq(tc.board.group_info[&"brown"]["color"], base.group_info[&"brown"]["color"], "banned groups key ignored")
 	check_eq(tc.chance.draw_pile.size(), 16, "banned cards key ignored")
-	var problems := ContentOverlay.problems(bad, base, _card_ids(), false)
+	for c in tc.chance.draw_pile:
+		if c.card_id == &"ch_advance_go":
+			check_eq(c.text, _shared_card_text()["ch_advance_go"], "empty card_text skipped, cards.json text kept")
+	var problems := ContentOverlay.problems(bad, base, _card_ids(), seat_count, false)
 	for needle in ["unknown key 'spaces'", "unknown key 'groups'", "unknown key 'cards'", "non-name key 'list_price'",
 			"'40' is not a space index", "'abc' is not a space index", "'no_group' is not a group",
-			"'no_card' is not a card_id"]:
+			"'no_card' is not a card_id", "card_text 'ch_advance_go' is not a non-empty string",
+			"seat_names has 7 names for %d seats" % seat_count,
+			"seat_names[1] repeats 'S'", "seat_names[2] is not a non-empty string",
+			"seat_names[3] is not a non-empty string"]:
 		var found := false
 		for p in problems:
 			found = found or p.contains(needle)
 		check(found, "problems() reports %s" % needle)
-	var partial := {"terms": {"jail": "j"}, "space_names": {"0": {"display_name": "G"}}}
-	check(ContentOverlay.problems(partial, base, _card_ids(), false).is_empty(), "partial overlay valid when not complete")
-	check(not ContentOverlay.problems(partial, base, _card_ids(), true).is_empty(), "partial overlay flagged when complete")
+	var not_list := ContentOverlay.problems({"seat_names": {"0": "S"}}, base, _card_ids(), seat_count, false)
+	check(not_list.has("seat_names is not a list"), "problems() reports a seat_names object")
+	var not_object := ContentOverlay.problems({"card_text": ["W"]}, base, _card_ids(), seat_count, false)
+	check(not_object.has("card_text is not an object"), "problems() reports a card_text list")
+	var partial := {"terms": {"jail": "j"}, "space_names": {"0": {"display_name": "G"}}, "seat_names": ["S"]}
+	check(ContentOverlay.problems(partial, base, _card_ids(), seat_count, false).is_empty(), "partial overlay valid when not complete")
+	var missing := ContentOverlay.problems(partial, base, _card_ids(), seat_count, true)
+	for needle in ["missing term 'house'", "missing space_names '1' display_name", "missing group_names 'brown'",
+			"missing seat_names[1]", "missing seat_names[%d]" % (seat_count - 1)]:
+		check(missing.has(needle), "complete overlay flags %s" % needle)
+	check(not missing.has("missing term 'jail'") and not missing.has("missing seat_names[0]"), "named entries not reported missing")
 	done()
+
+
+## Dig 3c (Shibi): seat names are pack words. seat_names (seat order, one per rules.json seat_pool
+## seat) names the default seats: GameSetup.seats_for() / seats() for the setup screen and the
+## local_players fallback of new_game(). Colors and Human/Bot flags stay shared; names a caller
+## passes in are kept; no overlay (or a seat the list does not name) keeps the seat_pool name.
+func test_seat_names_from_overlay() -> void:
+	var fixture := JsonData.load_json(FIXTURE_CONTENT)
+	var names: Array = fixture["seat_names"]
+	var pool := _seat_pool()
+	var flags: Array[bool] = [false, true, false, true, false, true]
+	var themed := GameSetup.seats_for(flags, fixture)
+	var plain := GameSetup.seats_for(flags)
+	check_eq(themed.size(), pool.size(), "every seat_pool seat")
+	for i in themed.size():
+		check_eq(themed[i]["display_name"], names[i], "seat %d named by the pack" % (i + 1))
+		check_eq(plain[i]["display_name"], pool[i]["display_name"], "seat %d without overlay keeps seat_pool" % (i + 1))
+		check_eq(themed[i]["color"], pool[i]["color"], "seat %d color stays shared" % (i + 1))
+		check_eq(themed[i]["is_bot"], flags[i], "seat %d Human/Bot from the choice" % (i + 1))
+	ContentOverlay.name_seats(fixture, pool)
+	check_eq(pool[0]["display_name"], plain[0]["display_name"], "name_seats() returns copies, input untouched")
+	check_eq(GameSetup.seats(1, 1, fixture)[1]["display_name"], names[1], "seats() names from the pack too")
+	var fallback := GameSetup.new_game(1234, [], fixture)
+	var base := GameSetup.new_game(1234)
+	check_eq(fallback.players.size(), base.players.size(), "local_players fallback seat count")
+	for i in fallback.players.size():
+		check_eq(fallback.players[i].display_name, names[i], "fallback seat %d named by the pack" % (i + 1))
+		check_eq(fallback.players[i].is_bot, base.players[i].is_bot, "fallback seat %d Human/Bot unchanged" % (i + 1))
+		check_eq(fallback.players[i].color, base.players[i].color, "fallback seat %d color unchanged" % (i + 1))
+	var custom := GameSetup.new_game(1234, _seats(), fixture)
+	check_eq(custom.players[0].display_name, "Ann", "a name the caller passes in is kept")
+	var partial := GameSetup.seats_for([false, false, false] as Array[bool], {"seat_names": ["X", 3, ""]})
+	check_eq(partial[0]["display_name"], "X", "seat named by a short list")
+	check_eq(partial[1]["display_name"], pool[1]["display_name"], "non-string seat name skipped")
+	check_eq(partial[2]["display_name"], pool[2]["display_name"], "empty seat name skipped")
+	var not_list := GameSetup.seats_for([false, false] as Array[bool], {"seat_names": "Ann"})
+	check_eq(not_list[0]["display_name"], pool[0]["display_name"], "seat_names that is not a list is ignored")
+	done()
+
+
+## Dig 3c (Shibi): card_text is optional per card. A pack's card_text replaces the cards.json text of
+## the cards it names, end to end (deck card, log line, card game_event, banner line); cards it
+## leaves out, and every card under a pack without card_text, keep the shared cards.json text.
+func test_card_text_override_and_defaults() -> void:
+	var shared := _shared_card_text()
+	var fixture := JsonData.load_json(FIXTURE_CONTENT)
+	var own: Dictionary = fixture["card_text"]
+	check(own.has("ch_advance_go") and not own.has("ch_dividend"), "fixture overrides some cards, not all")
+	var bare := fixture.duplicate(true)
+	bare.erase("card_text")
+	var tc := GameSetup.new_game(1234, [], fixture)
+	var without := GameSetup.new_game(1234, [], bare)
+	var seen := 0
+	for deck in [tc.chance, tc.community_chest]:
+		for c in deck.draw_pile:
+			var cid := String(c.card_id)
+			check_eq(c.text, String(own.get(cid, shared[cid])), "card %s: pack text where named, else cards.json" % cid)
+			seen += 1
+	for deck in [without.chance, without.community_chest]:
+		for c in deck.draw_pile:
+			check_eq(c.text, shared[String(c.card_id)], "card %s: no card_text keeps cards.json" % c.card_id)
+			seen += 1
+	check_eq(seen, 2 * shared.size(), "every card of both matches checked")
+	var lines := DialogueLines.new()  # fallback lines show the card text as is ("{text}")
+	var drawn := _draw_chance(tc, &"ch_advance_go")
+	check_eq(String(drawn.get("text", "")), own["ch_advance_go"], "card event carries the pack text")
+	check_eq(lines.event_line(tc, &"card", drawn), own["ch_advance_go"], "banner line shows the pack text")
+	check(_logged(tc, own["ch_advance_go"]), "log shows the pack text")
+	var kept := GameSetup.new_game(1234, [], fixture)
+	drawn = _draw_chance(kept, &"ch_dividend")
+	check_eq(String(drawn.get("text", "")), shared["ch_dividend"], "card the pack leaves out keeps cards.json text")
+	check(_logged(kept, shared["ch_dividend"]), "log shows the shared text")
+	drawn = _draw_chance(without, &"ch_advance_go")
+	check_eq(lines.event_line(without, &"card", drawn), shared["ch_advance_go"], "no card_text: banner shows cards.json text")
+	done()
+
+
+## Draws Chance card `card_id` for the current player (space 4 + 3 = 7, a Chance space); returns the
+## card game_event payload ({} when none was emitted).
+func _draw_chance(tc: TurnController, card_id: StringName) -> Dictionary:
+	var got := {}
+	var grab := func(kind: StringName, info: Dictionary) -> void:
+		if kind == &"card":
+			got.merge(info)
+	tc.game_event.connect(grab)
+	check(tc.chance.move_to_top(card_id), "card %s found" % card_id)
+	tc.current_player().position = 4
+	tc.dice.force(1, 2)
+	tc.roll()
+	tc.game_event.disconnect(grab)
+	return got
 
 
 ## A5: core stays free of UI; the overlay is passed in, never looked up.
@@ -149,15 +289,26 @@ func test_core_does_not_read_ui_style() -> void:
 	done()
 
 
-## A6: a seeded game under a non-default overlay never logs a default-pack word.
+## A6: a seeded game under a non-default overlay never logs a default-pack word. Seats are named
+## the way the setup screen names them (GameSetup.seats_for with the pack overlay, dig 3c), so a
+## default seat name ("Commander N") would show up here.
 func test_no_default_words_leak() -> void:
 	var words := _default_words()
+	var overlay := _full_fixture()
+	var seat_names: Array = overlay["seat_names"]
+	check_eq(ContentOverlay.problems(overlay, _base_board(), _card_ids(), _seat_pool().size(), true), [] as Array[String],
+			"fixture overlay complete, so a leak can only come from code")
 	for game_seed in [3, 8]:
-		var tc := GameSetup.new_game(game_seed, _seats(), _full_fixture())
+		var tc := GameSetup.new_game(game_seed, GameSetup.seats_for([false, false, false] as Array[bool], overlay), overlay)
+		check_eq(tc.players.size(), 3, "seed %d: three seats from the setup path" % game_seed)
 		tc.determine_start_player()
 		_exercise_jail_exits(tc)
 		_play(tc, 1500)
 		var texts: Array[String] = tc.log_lines.duplicate()
+		for i in tc.players.size():
+			texts.append(tc.players[i].display_name)
+			check_eq(tc.players[i].display_name, seat_names[i], "seed %d: seat %d named by the pack" % [game_seed, i + 1])
+			check(_logged(tc, seat_names[i]), "seed %d: log names seat %d by its pack name" % [game_seed, i + 1])
 		for s in tc.board.spaces:
 			texts.append(s.display_name)
 			texts.append(s.short_name)
@@ -228,8 +379,11 @@ func test_main_applies_pack_overlay_at_match_start() -> void:
 	var main: Main = load("res://scenes/main.tscn").instantiate()
 	var panel := main.show_setup(null)
 	panel.save_path = ""
+	var default_seats: Array = JsonData.load_json(DEFAULT_CONTENT)["seat_names"]
+	check_eq(panel._seat_labels[0].text, default_seats[0], "default pack seat labels")
 	panel.start()
 	check_eq(main.controller.board.spaces[0].display_name, "Launch Bay", "default pack names")
+	check_eq(main.controller.players[0].display_name, default_seats[0], "default pack seat names")
 	main.free()
 	panel.free()
 	UiStyle.theme_index_path = FIXTURE_INDEX
@@ -237,12 +391,25 @@ func test_main_applies_pack_overlay_at_match_start() -> void:
 	panel = main.show_setup(null)
 	panel.save_path = ""
 	check(main.select_theme("test_alt"), "switch to the fixture pack on setup")
+	var fixture := JsonData.load_json(FIXTURE_CONTENT)
+	var seat_names: Array = fixture["seat_names"]
+	for i in panel._seat_labels.size():
+		check_eq(panel._seat_labels[i].text, seat_names[i], "setup seat %d label from the pack" % (i + 1))
 	panel.start()
 	var board := main.controller.board
 	check_eq(board.spaces[0].display_name, "T Space 0", "pack space names at match start")
 	check_eq(board.group_info[&"brown"]["display_name"], "T Group 1", "pack group names at match start")
 	check_eq(board.term("buy"), "T-buy", "pack terms at match start")
 	check(main._buy_button.text.begins_with("T-buy"), "buy button uses the pack term")
+	check_eq(main.controller.players.size(), panel.count, "one player per chosen seat")
+	for i in main.controller.players.size():
+		check_eq(main.controller.players[i].display_name, seat_names[i], "match seat %d named by the pack" % (i + 1))
+	check(main._turn_label.text.contains(main.controller.current_player().display_name), "turn label shows the pack name")
+	var advance_go: Card = null
+	for c in main.controller.chance.draw_pile:
+		if c.card_id == &"ch_advance_go":
+			advance_go = c
+	check(advance_go != null and advance_go.text == fixture["card_text"]["ch_advance_go"], "pack card text at match start")
 	main.free()
 	panel.free()
 	done()

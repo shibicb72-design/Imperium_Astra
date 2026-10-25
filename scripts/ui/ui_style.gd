@@ -83,11 +83,28 @@ static func reload_theme() -> void:
 	_theme = {}
 
 
-## Active pack's content overlay (its theme.json content_path, ContentOverlay shape), {} if none.
-## Main passes it to GameSetup.new_game() at match start; core never calls this.
+## Active pack's content overlay (its theme.json content_path, ContentOverlay shape). Main passes it
+## to GameSetup.new_game() at match start and the setup screen names seats from it; core never calls
+## this. Every pack must ship one: a pack with no content_path or a missing content file fails
+## loudly (push_error naming the pack; JsonData does the same for a file that is not a JSON object)
+## and gets {}, so the match shows the shared data words.
 static func content_overlay() -> Dictionary:
-	var path := String(theme_data().get("content_path", ""))
-	return JsonData.load_json(path) if path != "" else {}
+	var problem := content_problem(theme_data())
+	if problem != "":
+		push_error("UiStyle: theme pack '%s' %s" % [theme_data().get("id", active_theme_path()), problem])
+		return {}
+	return JsonData.load_json(String(theme_data()["content_path"]))
+
+
+## Why pack `theme` (a theme.json dictionary) cannot supply its content overlay: it names no
+## content_path, or that file does not exist. "" when the file is there.
+static func content_problem(theme: Dictionary) -> String:
+	var path: Variant = theme.get("content_path")
+	if not path is String or String(path).is_empty():
+		return "names no content_path"
+	if not FileAccess.file_exists(path):
+		return "content_path %s does not exist" % path
+	return ""
 
 
 static func color(key: String) -> Color:

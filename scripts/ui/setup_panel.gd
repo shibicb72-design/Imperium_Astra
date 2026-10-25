@@ -1,8 +1,10 @@
 class_name SetupPanel
 extends PanelContainer
 ## Seat setup shown before a match (OPEN_QUESTIONS Q19): seat count (data/ui.json
-## setup_seat_counts, 2-4), Human/Bot per seat, Start. Names and colors come from rules.json
-## seat_pool through GameSetup.seats_for. Start needs data/ui.json setup_min_humans people.
+## setup_seat_counts, 2-4), Human/Bot per seat, Start. Seat names come from the active pack's
+## content overlay (seat_names) and colors from rules.json seat_pool, through GameSetup.seats_for;
+## refresh_theme() relabels the seats after a pack switch. Start needs data/ui.json
+## setup_min_humans people.
 ## The last choice is kept in user:// (save_path) so the next launch opens with it.
 ## Presentation only: emits start_requested(seats) and the owner builds the match.
 
@@ -22,6 +24,7 @@ var _scale := 0.0
 var _margin: MarginContainer
 var _count_buttons: Array[Button] = []
 var _seat_rows: Array[Control] = []
+var _seat_labels: Array[Label] = []
 var _seat_toggles: Array[Button] = []
 var _hint_label: Label
 var _start_button: Button
@@ -69,13 +72,17 @@ func human_count() -> int:
 	return n
 
 
+## Enough people and a seat count GameSetup accepts. Names do not matter here, so the pack overlay
+## is not read on every refresh.
 func can_start() -> bool:
-	return human_count() >= int(UiStyle.num("setup_min_humans", 1.0)) and not seats().is_empty()
+	var count_ok := not GameSetup.seats_for(bot_flags.slice(0, count)).is_empty()
+	return count_ok and human_count() >= int(UiStyle.num("setup_min_humans", 1.0))
 
 
-## Seat specs for GameSetup.new_game / GameState.new_local_game, in seat order.
+## Seat specs for GameSetup.new_game / GameState.new_local_game, in seat order, named by the
+## active pack.
 func seats() -> Array[Dictionary]:
-	return GameSetup.seats_for(bot_flags.slice(0, count))
+	return GameSetup.seats_for(bot_flags.slice(0, count), UiStyle.content_overlay())
 
 
 ## Saves the choice and emits start_requested. Does nothing when the choice cannot start.
@@ -96,6 +103,7 @@ func refresh_theme() -> void:
 			c.free()
 	_count_buttons.clear()
 	_seat_rows.clear()
+	_seat_labels.clear()
 	_seat_toggles.clear()
 	_build_ui()
 	_refresh()
@@ -136,7 +144,7 @@ func _build_ui() -> void:
 	var all_flags: Array[bool] = []
 	all_flags.resize(bot_flags.size())
 	all_flags.fill(false)
-	var specs := GameSetup.seats_for(all_flags)
+	var specs := GameSetup.seats_for(all_flags, UiStyle.content_overlay())
 	for i in bot_flags.size():
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 8)
@@ -151,6 +159,7 @@ func _build_ui() -> void:
 		toggle.custom_minimum_size.x = UiStyle.touch() * 3.0
 		toggle.pressed.connect(func() -> void: set_bot(i, not bot_flags[i]))
 		_seat_rows.append(row)
+		_seat_labels.append(seat_label)
 		_seat_toggles.append(toggle)
 
 	_hint_label = UiStyle.label(box, "", "small")

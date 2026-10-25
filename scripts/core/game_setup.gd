@@ -9,9 +9,10 @@ const BOT_PATH := "res://data/bot.json"
 
 
 ## rng_seed < 0 picks a random seed. Players come from `seats` (see seats()) or, when empty, from
-## rules.json local_players (P0 hotseat). A seat is {display_name, color, is_bot}.
-## `content` is the active theme pack's content overlay (ContentOverlay: terms, space / group
-## names, optional card text), passed in by the caller; {} keeps board.json / cards.json words.
+## rules.json local_players (P0 hotseat). A seat is {display_name, color, is_bot}; names in `seats`
+## are used as given. `content` is the active theme pack's content overlay (ContentOverlay: terms,
+## space / group / seat names, optional card text), passed in by the caller; it names the
+## local_players fallback seats too. {} keeps the board.json / cards.json / rules.json words.
 static func new_game(rng_seed: int = -1, seat_specs: Array[Dictionary] = [], content: Dictionary = {}) -> TurnController:
 	var config := RulesConfig.from_dict(JsonData.load_json(RULES_PATH))
 	var cards := JsonData.load_json(CARDS_PATH)
@@ -29,7 +30,7 @@ static func new_game(rng_seed: int = -1, seat_specs: Array[Dictionary] = [], con
 	ContentOverlay.apply(content, tc.board, [tc.chance, tc.community_chest])
 	tc.chance.shuffle(tc.dice.rng)
 	tc.community_chest.shuffle(tc.dice.rng)
-	var specs := seat_specs if not seat_specs.is_empty() else config.local_players
+	var specs := seat_specs if not seat_specs.is_empty() else ContentOverlay.name_seats(content, config.local_players)
 	for i in specs.size():
 		var spec: Dictionary = specs[i]
 		var p := Player.new()
@@ -42,29 +43,29 @@ static func new_game(rng_seed: int = -1, seat_specs: Array[Dictionary] = [], con
 	return tc
 
 
-## Seat list for new_game(): `humans` people first, then `bots`, named from rules.json seat_pool.
+## Seat list for new_game(): `humans` people first, then `bots`, named as in seats_for().
 ## Empty if the total is outside min_players..max_players or the pool is too short.
-static func seats(humans: int, bots: int) -> Array[Dictionary]:
+static func seats(humans: int, bots: int, content: Dictionary = {}) -> Array[Dictionary]:
 	if humans < 0 or bots < 0:
 		return []
 	var flags: Array[bool] = []
 	for i in humans + bots:
 		flags.append(i >= humans)
-	return seats_for(flags)
+	return seats_for(flags, content)
 
 
-## Seat list in seat order: seat i is a bot when bot_flags[i] is true (setup screen). Names and
-## colors from rules.json seat_pool. Empty if the count is outside min_players..max_players or the
+## Seat list in seat order: seat i is a bot when bot_flags[i] is true (setup screen). Colors from
+## rules.json seat_pool; names from `content` seat_names (the active pack's overlay, passed in by
+## the caller), else seat_pool. Empty if the count is outside min_players..max_players or the
 ## pool is too short. Any human/bot mix is legal here (all-bot soak games included); the setup
 ## screen applies its own minimum of people (data/ui.json setup_min_humans).
-static func seats_for(bot_flags: Array[bool]) -> Array[Dictionary]:
+static func seats_for(bot_flags: Array[bool], content: Dictionary = {}) -> Array[Dictionary]:
 	var config := RulesConfig.from_dict(JsonData.load_json(RULES_PATH))
 	var out: Array[Dictionary] = []
 	var total := bot_flags.size()
 	if total < config.min_players or total > config.max_players or total > config.seat_pool.size():
 		return out
+	out = ContentOverlay.name_seats(content, config.seat_pool.slice(0, total))
 	for i in total:
-		var spec: Dictionary = config.seat_pool[i].duplicate()
-		spec["is_bot"] = bot_flags[i]
-		out.append(spec)
+		out[i]["is_bot"] = bot_flags[i]
 	return out

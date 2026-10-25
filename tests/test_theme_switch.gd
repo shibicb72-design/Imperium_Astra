@@ -17,6 +17,20 @@ func _use_fixture_index() -> void:
 	UiStyle.theme_index_path = FIXTURE_INDEX
 
 
+## seat_names of registered pack `id` (from its theme.json content_path).
+static func _pack_seat_names(id: String) -> Array:
+	var t := JsonData.load_json(UiStyle.theme_path_for(id))
+	return JsonData.load_json(String(t.get("content_path", ""))).get("seat_names", [])
+
+
+## Setup seat label texts must be `names` in seat order.
+func _check_seat_labels(panel: SetupPanel, names: Array, what: String) -> void:
+	check_eq(panel._seat_labels.size(), panel.bot_flags.size(), "%s: one label per offered seat" % what)
+	check(names.size() >= panel._seat_labels.size(), "%s: the pack names every offered seat" % what)
+	for i in mini(panel._seat_labels.size(), names.size()):
+		check_eq(panel._seat_labels[i].text, names[i], "%s: seat %d label" % [what, i + 1])
+
+
 func test_shipped_index_lists_default_pack() -> void:
 	var packs := UiStyle.theme_packs()
 	check(not packs.is_empty(), "index lists at least one pack")
@@ -107,6 +121,35 @@ func test_main_switch_before_match_start() -> void:
 		check_eq(main._starfield.stars.size(), 5, "match starfield from the pack")
 		check(not main.select_theme("imperium_astra"), "mid-match switch refused")
 		check_eq(String(UiStyle.theme_data().get("id", "")), "test_alt", "refused switch keeps the pack")
+	main.free()
+	panel.free()
+	done()
+
+
+## Dig 3c: seat names are pack words, so a switch on the setup screen relabels the seats, switching
+## back restores the default names, and the match starts with the active pack's names.
+func test_seat_labels_follow_pack_switch() -> void:
+	_use_fixture_index()
+	var default_names := _pack_seat_names("imperium_astra")
+	var alt_names := _pack_seat_names("test_alt")
+	check(not default_names.is_empty() and default_names != alt_names, "packs name seats differently")
+	var main: Main = load("res://scenes/main.tscn").instantiate()
+	var panel := main.show_setup(null)
+	panel.save_path = ""
+	_check_seat_labels(panel, default_names, "default pack")
+	check(main.select_theme("test_alt"), "switch on setup")
+	_check_seat_labels(panel, alt_names, "after switch")
+	check(main.select_theme("imperium_astra"), "switch back")
+	_check_seat_labels(panel, default_names, "after switch back")
+	check(main.select_theme("test_alt"), "switch again")
+	panel.set_count(3)
+	panel.set_bot(0, false)
+	panel.start()
+	check(main.controller != null, "match started")
+	if main.controller != null:
+		check_eq(main.controller.players.size(), 3, "three seats chosen")
+		for i in main.controller.players.size():
+			check_eq(main.controller.players[i].display_name, alt_names[i], "match seat %d named by the pack" % (i + 1))
 	main.free()
 	panel.free()
 	done()

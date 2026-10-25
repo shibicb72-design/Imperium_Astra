@@ -6,7 +6,8 @@ var controller: TurnController = null
 
 
 ## `seats` from GameSetup.seats(humans, bots); empty uses rules.json local_players.
-## `content`: the active pack's content overlay (UiStyle.content_overlay()).
+## `content`: the active pack's content overlay (UiStyle.content_overlay()); it also names the
+## local_players seats.
 func new_local_game(rng_seed: int = -1, seats: Array[Dictionary] = [], content: Dictionary = {}) -> TurnController:
 	controller = GameSetup.new_game(rng_seed, seats, content)
 	controller.determine_start_player()
