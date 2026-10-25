@@ -1,9 +1,17 @@
+﻿# Build / export outputs
 build/
+android/build/
 .godot/
 *.apk
 *.aab
 *.idsig
-*.jks
+
+# Local secrets / release keys — keep shared debug keystore
 *.keystore
-android/build/
-__pycache__/
+!android/debug.keystore
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+*~
