@@ -25,8 +25,9 @@ static func _kill(c: CanvasItem) -> void:
 
 
 ## Shows or hides `c` with a short fade. `visible` stays true until a fade-out ends.
-static func set_shown(c: CanvasItem, shown: bool) -> void:
-	var seconds := UiStyle.num("panel_fade_seconds", 0.18)
+static func set_shown(c: CanvasItem, shown: bool, seconds: float = -1.0) -> void:
+	if seconds < 0.0:
+		seconds = UiStyle.num("panel_fade_seconds", 0.18)
 	var hiding := c.has_meta(HIDING_META)
 	if not _animated(c, seconds):
 		_kill(c)

@@ -17,6 +17,8 @@ var _name: Label
 var _info: Label
 var _grid: GridContainer
 var _buttons: Dictionary = {}
+var _accepting_input := false
+var _animate := false
 
 
 func setup(controller: TurnController) -> void:
@@ -45,16 +47,32 @@ func setup(controller: TurnController) -> void:
 
 
 func _on_slot(slot: StringName) -> void:
-	slot_pressed.emit(slot)
+	if offers(slot):
+		slot_pressed.emit(slot)
+
+
+## Cosmetic fade only; the gate owns legality. Disable input before a fade-out keeps us visible.
+func hide_panel() -> void:
+	_accepting_input = false
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for b: Button in _buttons.values():
+		b.disabled = true
+		b.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	UiFx.set_shown(self, false, UiStyle.num("turn_panel_exit_seconds", 0.12) if _animate else 0.0)
 
 
 ## Shows the panel for gate `state` (hidden when the state has no options, except GAME_OVER) unless
 ## `suppressed` (the Action view is open).
-func refresh(state: MatchGate.State, suppressed: bool = false) -> void:
+func refresh(state: MatchGate.State, suppressed: bool = false, animated: bool = false) -> void:
+	_animate = animated
 	var slots := MatchGate.panel_slots(state)
-	visible = not suppressed and (not slots.is_empty() or state == MatchGate.State.GAME_OVER)
-	if not visible:
+	var shown := not suppressed and (not slots.is_empty() or state == MatchGate.State.GAME_OVER)
+	if not shown:
+		hide_panel()
 		return
+	_accepting_input = true
+	mouse_filter = Control.MOUSE_FILTER_STOP
+	UiFx.set_shown(self, true, UiStyle.num("turn_panel_enter_seconds", 0.18) if _animate else 0.0)
 	var tc := _controller
 	var who: Player = winner(tc) if state == MatchGate.State.GAME_OVER else _decider()
 	if state == MatchGate.State.GAME_OVER:
@@ -70,6 +88,7 @@ func refresh(state: MatchGate.State, suppressed: bool = false) -> void:
 	_info.visible = _info.text != ""
 	for slot: StringName in SLOT_ORDER:
 		var b: Button = _buttons[slot]
+		b.mouse_filter = Control.MOUSE_FILTER_STOP
 		b.visible = slot in slots and slot_shown(slot)
 		if b.visible:
 			b.text = slot_text(slot)
@@ -136,7 +155,7 @@ func button(slot: StringName) -> Button:
 ## True when the panel is up and `slot`'s button is visible and enabled.
 func offers(slot: StringName) -> bool:
 	var b: Button = _buttons[slot]
-	return visible and b.visible and not b.disabled
+	return _accepting_input and visible and b.visible and not b.disabled
 
 
 func set_columns(columns: int) -> void:

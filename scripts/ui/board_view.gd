@@ -274,7 +274,9 @@ func advance(delta: float) -> void:
 				_tumble_left -= delta
 				if _tumble_left <= 0.0:
 					_tumble = Vector2i(_rng.randi_range(1, 6), _rng.randi_range(1, 6))
-					_tumble_left = 0.07
+					# Fast face changes at release, slower as the dice settle. Visual RNG only.
+					_tumble_left = lerpf(UiStyle.num("dice_tumble_fast_seconds", 0.035),
+						UiStyle.num("dice_tumble_slow_seconds", 0.11), _t / float(_item["dur"]))
 			queue_redraw()
 			update_pieces()
 			return
@@ -596,7 +598,7 @@ func _moving_point(br: Rect2, cell: float) -> Array:
 		var a := token_point(br, cell, pid, int(_item["from"]))
 		var b := token_point(br, cell, pid, int(_item["to"]))
 		var lift := sin(PI * u)
-		return [a.lerp(b, u) - Vector2(0, hop * 3.0 * lift), lift]
+		return [a.lerp(b, smoothstep(0.0, 1.0, u)) - Vector2(0, hop * 3.0 * lift), lift]
 	var per := float(_item["per"])
 	var dir := signi(int(_item["steps"]))
 	var k := mini(int(_t / per), absi(int(_item["steps"])) - 1)
@@ -605,7 +607,7 @@ func _moving_point(br: Rect2, cell: float) -> Array:
 	var p0 := token_point(br, cell, pid, i0)
 	var p1 := token_point(br, cell, pid, i0 + dir)
 	var lift2 := sin(PI * u2)
-	return [p0.lerp(p1, u2) - Vector2(0, hop * lift2), lift2]
+	return [p0.lerp(p1, smoothstep(0.0, 1.0, u2)) - Vector2(0, hop * lift2), lift2]
 
 
 ## Plain circle tokens for players without an attached piece node (same math as piece_state()).

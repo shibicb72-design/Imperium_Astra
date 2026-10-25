@@ -205,13 +205,13 @@ func press_die() -> bool:
 
 
 ## Turn panel option (or buy_property / end_turn): applied only when the gate state lists `slot`
-## and it is legal now; the panel hides at once and the table decides what shows next.
+## and it is legal now; panel input stops at once and the table decides what shows next.
 func press_slot(slot: StringName) -> bool:
 	if _action_open or not slot in MatchGate.panel_slots(gate()):
 		return false
 	if not _turn_panel.slot_shown(slot) or not _turn_panel.slot_enabled(slot):
 		return false
-	_turn_panel.visible = false
+	_turn_panel.hide_panel()
 	match slot:
 		&"buy":
 			controller.buy()
@@ -651,7 +651,7 @@ func _refresh() -> void:
 			_player_labels[i].text = "%s%s%s $%d%s" % [mark, pl.display_name, bot, pl.cash, _holdings_summary(pl)]
 	_done_button.visible = _action_open
 	_board_view.set_die_ready(MatchGate.die_live(state) and not _action_open, p.color)
-	_turn_panel.refresh(state, _action_open)
+	_turn_panel.refresh(state, _action_open, _board_view.animate)
 	_auction_panel.refresh()
 	_debt_panel.refresh()
 	_holdings_panel.refresh()

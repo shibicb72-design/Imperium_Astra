@@ -1,6 +1,92 @@
 extends TestCase
 
 
+func test_roll_move_queue_keeps_panel_behind_settled_gate() -> void:
+	var main := Main.new()
+	main.controller = GameSetup.new_game(7)
+	main.start(null)
+	var tc := main.controller
+	for p in tc.players:
+		p.is_bot = false
+	tc.current_player().set_position(0)
+	main._board_view.sync_to_game()
+	main._board_view.animate = true
+	tc.dice.force(1, 2)
+	main._refresh()
+	check(main.press_die(), "tap handler accepts roll")
+	check_eq(main._board_view.dice_look(), &"tumble", "roll starts with tumble")
+	check_eq(Vector2i(tc.dice.d1, tc.dice.d2), Vector2i(1, 2), "presentation preserves outcome")
+	var roll_seconds := UiStyle.num("dice_roll_seconds", 0.55)
+	main._board_view.advance(roll_seconds * 0.1)
+	var fast_interval := main._board_view._tumble_left
+	main._board_view.advance(roll_seconds * 0.6)
+	check(main._board_view._tumble_left > fast_interval, "tumble slows before settling")
+	check_eq(Vector2i(tc.dice.d1, tc.dice.d2), Vector2i(1, 2), "visual RNG leaves rules dice intact")
+	main._board_view.advance(roll_seconds * 0.3 + 0.01)
+	main._refresh()
+	check(main._board_view.piece_state(tc.current_player().id).moving, "piece starts after dice")
+	check_eq(main.gate(), MatchGate.State.BUSY, "hop keeps gate busy")
+	check(not main._turn_panel.offers(&"buy"), "no panel action mid-hop")
+	main._board_view.advance(10.0)
+	main._refresh()
+	check_eq(main.gate(), MatchGate.State.BUY, "settled gate offers purchase")
+	check(main._turn_panel.offers(&"buy"), "panel ready without waiting for finished signal")
+	check_eq(main._board_view.piece_node(tc.current_player().id).position,
+		main._board_view.piece_state(tc.current_player().id).point, "piece rests at landing")
+	main.free()
+	done()
+
+
+func test_turn_panel_hide_blocks_stale_presses_and_reopens() -> void:
+	var tc := GameSetup.new_game(7)
+	for p in tc.players:
+		p.is_bot = false
+	var panel := TurnPanel.new()
+	panel.setup(tc)
+	var emitted: Array[StringName] = []
+	panel.slot_pressed.connect(func(slot: StringName) -> void: emitted.append(slot))
+	panel.refresh(MatchGate.State.END_TURN)
+	check(panel.offers(&"end_turn"), "shown panel accepts input")
+	panel.hide_panel()
+	panel.visible = true  # simulate the visible portion of a fade-out
+	panel.button(&"end_turn").pressed.emit()
+	check(emitted.is_empty(), "stale signal cannot escape hiding panel")
+	check(not panel.offers(&"end_turn"), "visible fade offers no action")
+	check(panel.button(&"end_turn").disabled, "hidden buttons disabled immediately")
+	panel.refresh(MatchGate.State.END_TURN)
+	panel.button(&"end_turn").pressed.emit()
+	check_eq(emitted, [&"end_turn"] as Array[StringName], "reopening restores input")
+	panel.refresh(MatchGate.State.BUSY)
+	check(not panel.visible, "animate off hides instantly")
+	check_eq(panel.modulate.a, 1.0, "snap restores alpha")
+	panel.free()
+	done()
+
+
+func test_piece_hops_follow_backward_wrap_and_queue_jump() -> void:
+	var tc := GameSetup.new_game(7)
+	var view := BoardView.new()
+	view.setup(tc)
+	view.size = Vector2(660, 660)
+	view.animate = true
+	view.queue_move(0, 0, -2)
+	view.queue_jump(0, 38, 10)
+	var observed: Array[int] = []
+	view.queue_call(func() -> void: observed.append(view.shown_position(0)))
+	view.advance(UiStyle.num("pawn_step_seconds", 0.14) * 0.25)
+	var s := view.piece_state(0)
+	check(s.moving and s.lift > 0.0, "backward wrap lifts piece")
+	check_eq(view.piece_node(0).position, s.point, "Node2D follows eased wrap")
+	view.advance(UiStyle.num("pawn_step_seconds", 0.14) * 1.75)
+	check(view.is_animating() and observed.is_empty(), "jump and callback remain queued")
+	view.advance(10.0)
+	check_eq(observed, [10], "callback sees completed jump")
+	check(not view.is_animating(), "queue drains completely")
+	check(not view.piece_state(0).moving, "piece settles")
+	view.free()
+	done()
+
+
 func teardown() -> void:
 	UiStyle.reset_theme()
 
