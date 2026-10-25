@@ -32,8 +32,13 @@ extends RefCounted
 ## space, amount}, tax {player, space, amount}, card {player, space, deck, text}, jailed {player,
 ## from, to}, released {player, how: fine|pardon|doubles|forced}, auction_won {player, space,
 ## amount}, auction_unsold {space}, building_auction_won {player, space, kind, amount},
-## building_auction_unsold {kind}, bankrupt {player, creditor}, trade_proposed / trade_accepted /
-## trade_rejected / trade_countered / trade_withdrawn {player, other}, game_over {player}.
+## building_auction_unsold {kind}, built_house {player, space, houses, cost}, built_hotel {player,
+## space, cost} (build or a won building lot), sold_house {player, space, count, houses, amount},
+## sold_hotel {player, space, houses, amount} (houses = what stays on the street: 4 after a single
+## hotel sale, 0 from sell_group_buildings, which emits one event per street it clears),
+## bankrupt {player, creditor} (also covers the buildings a bankruptcy sells; no sold_* for those),
+## trade_proposed / trade_accepted / trade_rejected / trade_countered / trade_withdrawn {player,
+## other}, game_over {player}.
 
 signal turn_started(player: Player)
 signal turn_ended(player: Player)
@@ -302,6 +307,7 @@ func _finish_building_auction(a: BuildingLotAuction) -> void:
 			_say("%s wins the %s for $%d and builds on %s." % [
 				winner.display_name, board.term(String(a.kind)), a.high_bid, board.spaces[i].display_name])
 			_event(&"building_auction_won", {"player": winner.id, "space": i, "kind": a.kind, "amount": a.high_bid})
+			_built_event(winner, board.deed_at(i), a.high_bid)
 			# As with deeds: cash was checked at bid time; any shortfall becomes a debt to the Bank.
 			_charge(winner, PropertyDeed.BANK, a.high_bid)
 		else:
@@ -338,6 +344,7 @@ func build(player_id: int, space_index: int) -> bool:
 	_say("%s builds a %s on %s for $%d." % [p.display_name, what, board.spaces[space_index].display_name, cost])
 	if had_houses == Building.MAX_HOUSES:
 		_say("%d %s return to the Bank." % [Building.MAX_HOUSES, board.term("houses")])
+	_built_event(p, deed, cost)
 	state_changed.emit()
 	return true
 
@@ -347,11 +354,13 @@ func sell_building(player_id: int, space_index: int) -> bool:
 		return false
 	var p := players[player_id]
 	var deed := board.deed_at(space_index)
-	var what := board.term("hotel") if deed.has_hotel else board.term("house")
+	var was_hotel := deed.has_hotel
+	var what := board.term("hotel") if was_hotel else board.term("house")
 	var value := Building.sell(board, bank, p, deed, config)
 	if value < 0:
 		return false
 	_say("%s sells a %s on %s for $%d." % [p.display_name, what, board.spaces[space_index].display_name, value])
+	_sold_event(p, deed, was_hotel, 1, value)
 	state_changed.emit()
 	return true
 
@@ -361,13 +370,37 @@ func sell_group_buildings(player_id: int, group_id: StringName) -> bool:
 	if not can_manage(player_id):
 		return false
 	var p := players[player_id]
+	# Snapshot what each street holds before the sale, for the per-street sold_* events.
+	var cleared: Array[Array] = []
+	for d in Building.group_deeds(board, group_id):
+		if d.owner == p.id and Building.level(d) > 0:
+			cleared.append([d, d.has_hotel, d.houses, Building.liquidation_value(d, config)])
 	var value := Building.sell_group(board, bank, p, group_id, config)
 	if value < 0:
 		return false
 	_say("%s sells all buildings in %s for $%d." % [
 		p.display_name, board.group_info.get(group_id, {}).get("display_name", group_id), value])
+	for c in cleared:
+		_sold_event(p, c[0], c[1], 1 if c[1] else int(c[2]), int(c[3]))
 	state_changed.emit()
 	return true
+
+
+## Presentation hook for a building just placed on `deed` (ids and numbers only).
+func _built_event(p: Player, deed: PropertyDeed, cost: int) -> void:
+	if deed.has_hotel:
+		_event(&"built_hotel", {"player": p.id, "space": deed.space_index, "cost": cost})
+	else:
+		_event(&"built_house", {"player": p.id, "space": deed.space_index, "houses": deed.houses, "cost": cost})
+
+
+## Presentation hook for buildings just sold back from `deed`; `count` houses or one hotel.
+func _sold_event(p: Player, deed: PropertyDeed, was_hotel: bool, count: int, amount: int) -> void:
+	if was_hotel:
+		_event(&"sold_hotel", {"player": p.id, "space": deed.space_index, "houses": deed.houses, "amount": amount})
+	else:
+		_event(&"sold_house", {"player": p.id, "space": deed.space_index, "count": count, "houses": deed.houses,
+				"amount": amount})
 
 
 func mortgage(player_id: int, space_index: int) -> bool:

@@ -14,6 +14,16 @@ extends Control
 ## positions, which catch up with the game as the queue plays. With `animate` off (headless
 ## tests, outside the tree) everything applies at once. Timings: data/ui.json dice_roll_seconds,
 ## pawn_step_seconds, pawn_move_max_seconds, pawn_jump_seconds, pawn_hop_height.
+##
+## Piece contract (P5-FEEL A3): piece_state(player_id) is where a player's piece should be drawn
+## this frame (board-local point, lift 0..1, moving, visible, alpha), from the same math as the
+## drawn tokens. A Node2D attached with attach_piece() becomes a child of this view and replaces
+## that player's drawn token; it is positioned from piece_state() every time the view updates
+## (each animation frame, on resize, and at once when animate is off). If the node has
+## apply_piece_state(state: PieceState) that is called too (lift, jail look, art). No physics
+## bodies: pieces only follow. The queue stays the single sequencer; queue_move / queue_jump drive
+## the shown board index and no rules state lives here. fade_out_piece() is the bankrupt-fade hook
+## (presentation-only fading set; call it on the existing `bankrupt` game_event); rules never wait.
 
 signal space_selected(index: int)
 signal animation_finished
@@ -31,6 +41,25 @@ const PIPS := {
 	6: [Vector2i(0, 0), Vector2i(0, 1), Vector2i(0, 2), Vector2i(2, 0), Vector2i(2, 1), Vector2i(2, 2)],
 }
 
+
+## Where one player's piece should be drawn this frame (see piece_state()).
+class PieceState extends RefCounted:
+	var player_id: int = -1
+	## Board index the piece counts as standing on (the shown position, not the game's).
+	var index: int = 0
+	## Board-local draw point, already raised by the lift.
+	var point := Vector2.ZERO
+	## Ground point under the piece (for a shadow).
+	var rest := Vector2.ZERO
+	## 0 on the ground .. 1 at the top of a hop or jump.
+	var lift := 0.0
+	var moving := false
+	var visible := false
+	## 1 normally; falls to 0 while a bankrupt piece fades out.
+	var alpha := 1.0
+	## Board cell size, for scaling art to the board.
+	var cell := 0.0
+
 var controller: TurnController = null
 var selected_index: int = NO_SELECTION
 ## Play queued motion over time; off = apply at once. Main turns it on inside the live tree.
@@ -46,12 +75,17 @@ var _t := 0.0
 var _tumble := Vector2i.ONE
 var _tumble_left := 0.0
 var _rng := RandomNumberGenerator.new()
+## Attached piece nodes (player id -> Node2D child).
+var _pieces: Dictionary = {}
+## Bankrupt pieces still fading out (player id -> [seconds left, total seconds]).
+var _fading: Dictionary = {}
 
 
 func _init() -> void:
 	custom_minimum_size = Vector2(200, 200)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	resized.connect(queue_redraw)
+	resized.connect(update_pieces)
 
 
 func setup(tc: TurnController) -> void:
@@ -64,11 +98,13 @@ func sync_to_game() -> void:
 	_queue.clear()
 	_item = {}
 	_shown_pos.clear()
+	_fading.clear()
 	if controller != null:
 		for p in controller.players:
 			_shown_pos[p.id] = p.position
 		_shown_dice = Vector2i(controller.dice.d1, controller.dice.d2)
 	queue_redraw()
+	update_pieces()
 
 
 func is_animating() -> bool:
@@ -135,6 +171,7 @@ func _start_next() -> void:
 		for p in controller.players:
 			_shown_pos[p.id] = p.position
 	queue_redraw()
+	update_pieces()
 	animation_finished.emit()
 
 
@@ -149,6 +186,7 @@ func _finish_item(item: Dictionary) -> void:
 		&"call":
 			(item["fn"] as Callable).call()
 	queue_redraw()
+	update_pieces()
 
 
 ## Plays the queue forward by `delta` seconds; called from _process, or by tests.
@@ -163,6 +201,7 @@ func advance(delta: float) -> void:
 					_tumble = Vector2i(_rng.randi_range(1, 6), _rng.randi_range(1, 6))
 					_tumble_left = 0.07
 			queue_redraw()
+			update_pieces()
 			return
 		delta -= left
 		var done := _item
@@ -174,6 +213,125 @@ func advance(delta: float) -> void:
 func _process(delta: float) -> void:
 	if not _item.is_empty():
 		advance(delta)
+	if not _fading.is_empty():
+		advance_fades(delta)
+
+
+# --- Piece contract (P5-FEEL A3) ----------------------------------------------------------------
+
+## Makes `node` the piece for `player_id` (a child of this view, replacing its drawn token). Any
+## previous piece for that player is freed. Positioned at once.
+func attach_piece(player_id: int, node: Node2D) -> void:
+	var old := piece_node(player_id)
+	if old == node:
+		return
+	if old != null:
+		remove_child(old)
+		old.free()
+	if node.get_parent() != null:
+		node.get_parent().remove_child(node)
+	add_child(node)
+	_pieces[player_id] = node
+	update_pieces()
+	queue_redraw()
+
+
+## Removes and returns the piece for `player_id` (null if none); the caller owns it afterwards.
+func detach_piece(player_id: int) -> Node2D:
+	var node := piece_node(player_id)
+	_pieces.erase(player_id)
+	if node != null:
+		remove_child(node)
+	queue_redraw()
+	return node
+
+
+## The attached piece for `player_id`, or null (also once it has been freed elsewhere).
+func piece_node(player_id: int) -> Node2D:
+	var v: Variant = _pieces.get(player_id)
+	if not is_instance_valid(v):
+		_pieces.erase(player_id)
+		return null
+	return v as Node2D
+
+
+## Frees every attached piece; the view draws plain tokens again.
+func clear_pieces() -> void:
+	for pid: int in _pieces.keys():
+		var node := detach_piece(pid)
+		if node != null:
+			node.free()
+
+
+## Where `player_id`'s piece should be drawn now. Invisible for unknown ids, before setup(), and
+## for bankrupt players once any fade has finished.
+func piece_state(player_id: int) -> PieceState:
+	var s := PieceState.new()
+	s.player_id = player_id
+	if controller == null or player_id < 0 or player_id >= controller.players.size():
+		return s
+	var br := _board_rect()
+	var cell := br.size.x / GRID
+	s.cell = cell
+	s.index = shown_position(player_id)
+	s.point = token_point(br, cell, player_id, s.index)
+	s.rest = s.point
+	if not _item.is_empty() and _item["type"] in [&"move", &"jump"] and int(_item["player"]) == player_id:
+		var mp := _moving_point(br, cell)
+		s.point = mp[0]
+		s.lift = mp[1]
+		s.rest = s.point + Vector2(0, UiStyle.num("pawn_hop_height", 0.3) * cell * s.lift)
+		s.moving = true
+	s.visible = true
+	if controller.players[player_id].is_bankrupt:
+		if _fading.has(player_id):
+			var f: Array = _fading[player_id]
+			s.alpha = clampf(float(f[0]) / float(f[1]), 0.0, 1.0)
+		else:
+			s.visible = false
+			s.alpha = 0.0
+	return s
+
+
+## Bankrupt-fade hook: keep `player_id`'s piece showing and fade it out over `seconds` instead of
+## hiding it at once. Presentation only; with animate off (or seconds <= 0) it is hidden at once.
+func fade_out_piece(player_id: int, seconds: float) -> void:
+	if animate and seconds > 0.0:
+		_fading[player_id] = [seconds, seconds]
+	else:
+		_fading.erase(player_id)
+	update_pieces()
+	queue_redraw()
+
+
+func is_fading(player_id: int) -> bool:
+	return _fading.has(player_id)
+
+
+## Plays bankrupt fades forward by `delta` seconds; called from _process, or by tests.
+func advance_fades(delta: float) -> void:
+	for pid: int in _fading.keys():
+		var f: Array = _fading[pid]
+		f[0] = float(f[0]) - delta
+		if float(f[0]) <= 0.0:
+			_fading.erase(pid)
+	update_pieces()
+	queue_redraw()
+
+
+## Moves every attached piece to its piece_state(); safe headless and outside the tree.
+func update_pieces() -> void:
+	for pid: int in _pieces.keys():
+		var node := piece_node(pid)
+		if node == null:
+			continue
+		var s := piece_state(pid)
+		node.position = s.point
+		node.visible = s.visible
+		node.modulate.a = s.alpha
+		node.z_index = 1 if s.moving else 0
+		if node.has_method(&"apply_piece_state"):
+			node.call(&"apply_piece_state", s)
 
 
 ## Grid cell (col, row) of a board index: GO bottom-right, clockwise (bottom row right-to-left,
@@ -363,28 +521,30 @@ func _moving_point(br: Rect2, cell: float) -> Array:
 	return [p0.lerp(p1, u2) - Vector2(0, hop * lift2), lift2]
 
 
-func _draw_tokens(br: Rect2, cell: float) -> void:
+## Plain circle tokens for players without an attached piece node (same math as piece_state()).
+func _draw_tokens(_br: Rect2, cell: float) -> void:
 	var radius := cell * 0.12
-	var moving := -1
-	if not _item.is_empty() and _item["type"] in [&"move", &"jump"]:
-		moving = int(_item["player"])
+	var moving: PieceState = null
 	for p in controller.players:
-		if p.is_bankrupt or p.id == moving:
+		if piece_node(p.id) != null:
 			continue
-		_draw_token(token_point(br, cell, p.id, shown_position(p.id)), radius, p)
-	if moving >= 0:  # drawn last so it passes over the others, with a soft shadow below it
-		var mp := _moving_point(br, cell)
-		var lift: float = mp[1]
-		var rest := (mp[0] as Vector2) + Vector2(0, UiStyle.num("pawn_hop_height", 0.3) * cell * lift)
-		draw_circle(rest, radius * (1.0 - 0.3 * lift), Color(0, 0, 0, 0.35))
-		_draw_token(mp[0], radius * (1.0 + 0.35 * lift), controller.players[moving])
+		var s := piece_state(p.id)
+		if not s.visible:
+			continue
+		if s.moving:
+			moving = s
+			continue
+		_draw_token(s.point, radius, p, s.alpha)
+	if moving != null:  # drawn last so it passes over the others, with a soft shadow below it
+		draw_circle(moving.rest, radius * (1.0 - 0.3 * moving.lift), Color(0, 0, 0, 0.35 * moving.alpha))
+		_draw_token(moving.point, radius * (1.0 + 0.35 * moving.lift), controller.players[moving.player_id], moving.alpha)
 
 
-func _draw_token(center: Vector2, radius: float, p: Player) -> void:
-	draw_circle(center, radius, p.color)
-	draw_arc(center, radius, 0.0, TAU, 24, Color.WHITE, 2.0 if p == controller.current_player() else 1.0)
+func _draw_token(center: Vector2, radius: float, p: Player, alpha: float = 1.0) -> void:
+	draw_circle(center, radius, Color(p.color, p.color.a * alpha))
+	draw_arc(center, radius, 0.0, TAU, 24, Color(Color.WHITE, alpha), 2.0 if p == controller.current_player() else 1.0)
 	if p.in_jail:
-		draw_line(center - Vector2(radius, 0), center + Vector2(radius, 0), Color.BLACK, 2.0)
+		draw_line(center - Vector2(radius, 0), center + Vector2(radius, 0), Color(Color.BLACK, alpha), 2.0)
 
 
 func _draw_center(br: Rect2, cell: float, font: Font) -> void:
