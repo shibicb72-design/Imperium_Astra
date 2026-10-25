@@ -152,7 +152,7 @@ func test_gate_main_flow_buy_then_end_turn() -> void:
 	panel.button(&"end_turn").pressed.emit()
 	check_eq(tc.current_index, 1, "turn handed on")
 	check_eq(main.gate(), S.BOT, "bot's turn")
-	check(not panel.visible and not bv.die_ready and not main._side.visible, "bot turn stays chrome-free")
+	check(not panel.visible and not bv.die_ready and not main._overlay.visible, "bot turn stays chrome-free")
 	main.free()
 	done()
 
@@ -441,12 +441,12 @@ func test_input_actions_follow_gate() -> void:
 	done()
 
 
-## Q24: Action opens Holdings / Trade / Log for the deciding seat (Dig 5a1: the control column) and
+## Q24: Action opens Holdings / Trade / Log for the deciding seat (Dig 5a2: the board overlay) and
 ## Done brings the panel back; nothing of it shows before then.
 func test_action_opens_holdings_for_acting_seat() -> void:
 	var main := _main(GameSetup.new_game(1234))
 	var tc := main.controller
-	check(not main._side.visible and not _shown(main._holdings_panel, main), "Holdings closed at start")
+	check(not main._overlay.visible and not _shown(main._holdings_panel, main), "Holdings closed at start")
 	tc.dice.force(1, 2)
 	main.press_die()
 	main._holdings_panel.set_actor(1)
@@ -456,7 +456,7 @@ func test_action_opens_holdings_for_acting_seat() -> void:
 	check(_live(main._done_button, main) and not main._board_view.die_ready, "Done offered")
 	check_eq(main._done_button.get_index(), 0, "Done leads the tab row (stays on screen in a narrow column)")
 	main._done_button.pressed.emit()
-	check(not main.action_open() and not main._side.visible, "Done closes the view")
+	check(not main.action_open() and not main._overlay.visible, "Done closes the view")
 	check(main._turn_panel.offers(&"buy") and main._turn_panel.offers(&"skip"), "the panel is back")
 	main.press_slot(&"action")
 	main.press_slot(&"skip")
@@ -485,6 +485,56 @@ func test_die_ready_look_distinct() -> void:
 	bv.set_die_ready(false)
 	check_eq(bv.dice_look(), &"faces", "readout once not die-ready")
 	main.free()
+	done()
+
+
+## Dig 5a2 (A0.3 / A1.5): each overlay (Action, auction bid, debt + Holdings, trade answer) names the
+## seat it serves, opens Holdings for that seat (not a stale actor such as the bot whose turn it is)
+## and floats inside the play area at its full minimum size, clear of the dialogue banner, on every
+## phone size; the board keeps its full short side under it.
+func test_overlays_float_without_reflow() -> void:
+	var phones: Array[Vector2] = [Vector2(411, 880), Vector2(411, 731), Vector2(360, 640), Vector2(898, 395),
+		Vector2(917, 825), Vector2(1280, 720)]
+	for kind: StringName in [&"action", &"auction", &"debt", &"trade"]:
+		var tc := GameSetup.new_game(1234)  # seat 1 person, seat 2 bot
+		if kind != &"action":
+			tc.current_index = 1  # the bot's turn: the overlay must name the person, not the current seat
+		var main := _main(tc)
+		main._holdings_panel.set_actor(1)
+		match kind:
+			&"action":
+				tc.dice.force(1, 2)
+				main.press_die()
+				main.press_slot(&"action")
+			&"auction":
+				main.show_section(Main.Section.LOG)  # stale: opened while no overlay shows (e.g. a bot's debt)
+				tc.dice.force(2, 3)
+				tc.roll()
+				tc.decline()  # the bot's decline: the person bids
+			&"debt":
+				tc.players[0].cash = 10
+				tc._charge(tc.players[0], 1, 200)
+				tc._continue()
+			&"trade":
+				var offer := Trade.propose(1, 0)
+				offer.give_cash = 50
+				tc.propose_trade(offer)
+		check(main._overlay.visible and main._overlay_title.text.begins_with(tc.players[0].display_name),
+				"%s overlay names the person it serves" % kind)
+		check_eq(main._holdings_panel.actor_id(), 0, "%s overlay: Holdings acts for that person" % kind)
+		var opens := {&"action": Main.Section.HOLDINGS, &"debt": Main.Section.HOLDINGS, &"trade": Main.Section.TRADE}
+		if opens.has(kind):
+			check(main.sections_open() and main._section == opens[kind], "%s overlay opens its section" % kind)
+		else:
+			check(not main.sections_open(), "auction overlay opens with its sections closed")
+		for s: Vector2 in phones:
+			main.size = s
+			main._update_layout()
+			var bm := main._board_view.custom_minimum_size
+			check_eq(bm.y if s.y > s.x else bm.x, Main.board_side_for(s - Vector2(16, 16)),
+					"board keeps its side under the %s overlay at %s" % [kind, s])
+			check(main.overlay_fits(), "%s overlay inside the play area, clear of the banner at %s" % [kind, s])
+		main.free()
 	done()
 
 

@@ -506,7 +506,10 @@ func test_main_applies_pack_overlay_at_match_start() -> void:
 	check_eq(main.controller.players.size(), panel.count, "one player per chosen seat")
 	for i in main.controller.players.size():
 		check_eq(main.controller.players[i].display_name, seat_names[i], "match seat %d named by the pack" % (i + 1))
-	check(main._turn_label.text.contains(main.controller.current_player().display_name), "turn label shows the pack name")
+	main.controller.current_index = 0  # setup seat 1 is a person by default
+	main.controller.dice.force(1, 2)  # 0 -> 3: no card drawn
+	check(main.press_die() and main.press_slot(&"action"), "Action after the person's move")
+	check(main._overlay.visible and main._overlay_title.text.contains(seat_names[0]), "overlay title shows the pack name")
 	var advance_go: Card = null
 	for c in main.controller.chance.draw_pile:
 		if c.card_id == &"ch_advance_go":

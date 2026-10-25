@@ -66,7 +66,7 @@ func test_piece_motion_build_and_bankrupt_feedback() -> void:
 	main._on_game_event(&"bankrupt", {"player": 0, "creditor": -1})
 	main._refresh()
 	check(view.is_fading(0), "bankruptcy event starts fade")
-	check(main._player_labels[0].text.contains("bankrupt"), "chip reflects rules immediately")
+	check(main._player_labels[0].text.contains("bankrupt"), "overlay chip reflects rules immediately")
 	view.advance_fades(UiStyle.num("bankrupt_fade_seconds", 0.8) * 0.5)
 	check(view.piece_node(0).visible and view.piece_node(0).modulate.a < 1, "piece fades before disappearing")
 	view.advance_fades(10)

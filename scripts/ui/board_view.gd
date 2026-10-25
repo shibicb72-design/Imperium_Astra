@@ -449,7 +449,11 @@ func board_rect() -> Rect2:
 
 ## Area for the dialogue banner: the lower middle of the empty board center, below the dice.
 func banner_rect() -> Rect2:
-	var br := _board_rect()
+	return banner_rect_in(_board_rect())
+
+
+## banner_rect() for the board square `br`, in br's coordinates (Main keeps overlays clear of it).
+static func banner_rect_in(br: Rect2) -> Rect2:
 	var cell := br.size.x / GRID
 	var inner := Rect2(br.position + Vector2(cell, cell) * 1.3, Vector2(cell, cell) * 8.4)
 	return Rect2(inner.position + Vector2(0, inner.size.y * 0.42), Vector2(inner.size.x, inner.size.y * 0.36))

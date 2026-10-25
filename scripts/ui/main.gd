@@ -10,11 +10,13 @@ extends Control
 ## touch/mouse buttons or InputMap actions only (roll_dice, buy_property, end_turn), all through the
 ## same gated handlers as the die and the panel.
 ##
-## Dig 5a1 interim: the control column (turn header, cash chips, status line, pinned Auction / Debt
-## banners, tabbed Holdings / Trade / Log on an opaque panel) shows only while a person owes a forced
-## input (auction bid, debt, trade answer) or opened Action; the board then shares the screen with
-## it (beside it in landscape, above it in portrait, data/ui.json board_max_share_*). Dig 5a2 turns
-## those into board overlays.
+## Board overlay (Dig 5a2): while a person owes a forced input (auction bid, debt, trade answer) or
+## opened Action, one opaque overlay floats over the board (overlay_rect_for: the free band after
+## the board, else above or below the dialogue banner) and the board never resizes or moves for it.
+## It names the seat it serves (the bidder, the debtor, the offer's receiver or the acting seat),
+## then cash chips, the status line, the pinned Auction / Debt banners and tabbed Holdings / Trade /
+## Log; Done closes Action. Each overlay opens with the sections closed unless its purpose opens one
+## (Action and debt: Holdings; a trade offer: Trade).
 ##
 ## Motion and dialogue (P4-DEMO): TurnController.game_event feeds BoardView's animation queue
 ## (dice tumble, pawn hops, Brig jump) and the DialogueBanner over the board center (theme
@@ -24,7 +26,6 @@ extends Control
 enum Section { HOLDINGS, TRADE, LOG }
 
 const SECTION_NAMES: Array[String] = ["Holdings", "Trade", "Log"]
-const MIN_BOARD_SIDE := 160.0
 
 ## Optional injected match (tests); otherwise a new local game from GameState.
 var controller: TurnController = null
@@ -34,9 +35,15 @@ var _scale := 0.0
 var _insets := Vector4.ZERO
 var _margin: MarginContainer
 var _box: BoxContainer
-var _side: VBoxContainer
+## Board overlay (forced inputs and the Action view): a child of Main outside every container.
+var _overlay: PanelContainer
+## The overlay's content column (title, chips, status, Auction / Debt banners, tabs, sections).
+var _overlay_box: VBoxContainer
 var _board_view: BoardView
-var _turn_label: Label
+## Names the seat the overlay serves (_served_seat), with cash and the jail note.
+var _overlay_title: Label
+## Seat id the overlay served at the last refresh (a new one re-targets Holdings).
+var _overlay_seat := -1
 var _player_labels: Array[Label] = []
 var _status_label: Label
 ## Post-move / jail options floating over the screen (MatchGate panel states and game over).
@@ -49,7 +56,7 @@ var _debt_panel: DebtPanel
 var _tab_buttons: Array[Button] = []
 var _sections: Array[Control] = []
 var _section: Section = Section.HOLDINGS
-var _sections_open := true
+var _sections_open := false
 var _section_holder: PanelContainer
 var _holdings_panel: HoldingsPanel
 var _trade_panel: TradePanel
@@ -223,8 +230,8 @@ func press_slot(slot: StringName) -> bool:
 	return true
 
 
-## Action (Q24 placeholder): Holdings / Trade / Log for the deciding seat. Dig 5a1 interim: shown in
-## the control column, which Done (close_action) hides again.
+## Action (Q24 placeholder): Holdings / Trade / Log for the deciding seat in the board overlay,
+## which Done (close_action) hides again.
 func open_action() -> void:
 	_action_open = true
 	_holdings_panel.set_actor(controller.deciding_player())
@@ -241,17 +248,41 @@ func action_open() -> bool:
 	return _action_open
 
 
-## Board side for the play area in board-first play: the full short side.
+## Board side for the play area: the full short side, whatever floats over it (A1.5).
 static func board_side_for(avail: Vector2) -> float:
 	return minf(avail.x, avail.y)
 
 
-## Dig 5a1 interim, while the control column shows (forced input or Action): up to the full short
-## side, but at most the data/ui.json share of the long side, so the column keeps room.
-static func column_board_side_for(avail: Vector2) -> float:
-	if avail.y > avail.x:
-		return minf(avail.x, avail.y * UiStyle.num("board_max_share_portrait", 0.48))
-	return minf(avail.y, avail.x * UiStyle.num("board_max_share_landscape", 0.58))
+## Where the board overlay floats, in the caller's coordinates (A1.5: the board never moves for it).
+## Candidates in order: the free band after the board (below it in portrait, right of it in
+## landscape), the play width above the dialogue `banner`, then below it. It takes the first that
+## is at least `need` (the overlay's minimum size; width also at least data/ui.json
+## overlay_min_width), else the tallest wide enough, so the banner line stays readable and never
+## takes the overlay's presses. `fill`: the area's full height (its sections are open), else
+## need.y, centered. Width: at most overlay_max_width. With no candidate wide enough (tiny windows),
+## the whole play area.
+static func overlay_rect_for(play: Rect2, board: Rect2, banner: Rect2, need: Vector2, fill: bool) -> Rect2:
+	var pad := UiStyle.num("screen_margin", 8.0)
+	var min_w := maxf(need.x, UiStyle.num("overlay_min_width", 256.0))
+	var band := Rect2(board.end.x, play.position.y, play.end.x - board.end.x, play.size.y)
+	if play.size.y > play.size.x:
+		band = Rect2(play.position.x, board.end.y, play.size.x, play.end.y - board.end.y)
+	var areas: Array[Rect2] = [band,
+		Rect2(play.position.x, play.position.y, play.size.x, banner.position.y - play.position.y),
+		Rect2(play.position.x, banner.end.y, play.size.x, play.end.y - banner.end.y)]
+	var best := play.grow(-pad)
+	var best_h := -1.0
+	for area in areas:
+		var a := area.grow(-pad)
+		if a.size.x < min_w or a.size.y <= best_h:
+			continue
+		best = a
+		best_h = a.size.y
+		if a.size.y >= need.y:
+			break
+	var w := minf(best.size.x, maxf(need.x, UiStyle.num("overlay_max_width", 560.0)))
+	var h := best.size.y if fill else minf(need.y, best.size.y)
+	return Rect2(best.get_center().x - w * 0.5, best.position.y + (best.size.y - h) * 0.5, w, h)
 
 
 func _build_ui() -> void:
@@ -278,14 +309,21 @@ func _build_ui() -> void:
 	_board_view.add_child(_banner)  # floats over the board center; never changes the layout
 	_board_view.resized.connect(_place_banner)
 
+	# The board overlay: a child of Main, not of _box, so showing or hiding it never reflows the
+	# board; an opaque card that takes the presses over the board area it covers.
+	_overlay = PanelContainer.new()
+	_overlay.add_theme_stylebox_override("panel", UiStyle.card_style(UiStyle.color("accent")))
+	_overlay.visible = false
+	add_child(_overlay)
+	_overlay.minimum_size_changed.connect(_place_overlay)  # re-wrapped text or a status line: re-place
 	var side := VBoxContainer.new()
-	_side = side
-	side.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	side.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_overlay_box = side
 	side.add_theme_constant_override("separation", 6)
-	_box.add_child(side)
+	_overlay.add_child(side)
 
-	_turn_label = UiStyle.label(side, "", "title")
+	_overlay_title = UiStyle.label(side, "", "title")
+	_overlay_title.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_overlay_title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	var chips := HFlowContainer.new()
 	side.add_child(chips)
 	for p in controller.players:
@@ -295,6 +333,7 @@ func _build_ui() -> void:
 		_player_labels.append(l)
 	_status_label = UiStyle.label(side, "", "small")
 	_status_label.max_lines_visible = 2
+	_status_label.visible = false  # takes room only once there is a message (_on_status)
 
 	_auction_panel = AuctionPanel.new()
 	_auction_panel.setup(controller)
@@ -340,8 +379,9 @@ func _build_ui() -> void:
 	_log_label.add_theme_font_size_override("font_size", UiStyle.font("small"))
 	_sections.append(_wrap_scroll(holder, _log_label))
 	show_section(Section.HOLDINGS)
+	collapse_sections()  # closed at start: Action, a debt or a trade offer opens a section
 
-	# Last child of Main: floats over the board and the column, outside every container.
+	# Last child of Main: floats over the board and the overlay, outside every container.
 	_turn_panel = TurnPanel.new()
 	_turn_panel.setup(controller)
 	add_child(_turn_panel)
@@ -372,15 +412,18 @@ func show_section(section: int) -> void:
 	_update_layout()
 
 
-## Tab tap: the open tab collapses the sections; any other tab opens its section.
+## Tab tap: the open tab collapses the sections; any other tab opens its section. While an offer
+## waits on a person (MatchGate TRADE_ANSWER) the open Trade tab stays open, so the answer row is
+## never folded away by accident.
 func toggle_tab(section: int) -> void:
-	if _sections_open and section == _section:
+	var answering := section == Section.TRADE and gate() == MatchGate.State.TRADE_ANSWER
+	if _sections_open and section == _section and not answering:
 		collapse_sections()
 	else:
 		show_section(section)
 
 
-## Hides the section area so the board gets the room back; no tab stays selected.
+## Hides the section area (the overlay shrinks to its title, banners and tabs); no tab stays selected.
 func collapse_sections() -> void:
 	_sections_open = false
 	_holdings_panel.close_picker()
@@ -411,26 +454,19 @@ func _play_rect() -> Rect2:
 	return Rect2(origin, size - origin - Vector2(_insets.z + m, _insets.w + m))
 
 
-## Board-first: the board takes the full short side (top in portrait, left in landscape) and the
-## turn panel floats in the free band or over it. Dig 5a1 interim, while the column shows: the board
-## gives way to it (share of the long side; in portrait also the column's minimum height, so
-## pinned buttons never fall off the bottom).
+## Board-first: the board always takes the full short side (top in portrait, left in landscape);
+## the turn panel and the overlay float in the free band or over it and never resize it.
 func _update_layout() -> void:
 	if _box == null:
 		return
 	_apply_margins()
-	var m := UiStyle.num("screen_margin", 8.0)
 	var avail := _play_rect().size
 	var portrait := avail.y > avail.x
 	_box.vertical = portrait
 	var board_side := board_side_for(avail)
-	if _side.visible:
-		board_side = column_board_side_for(avail)
-		if portrait:
-			var room := avail.y - _side.get_combined_minimum_size().y - m
-			board_side = maxf(MIN_BOARD_SIDE, minf(board_side, room))
 	_board_view.custom_minimum_size = Vector2(0, board_side) if portrait else Vector2(board_side, 0)
 	_place_turn_panel()
+	_place_overlay()
 
 
 ## Floats the turn panel without moving the board (TurnPanel.rect_for: free band after the board,
@@ -450,14 +486,36 @@ func _place_turn_panel() -> void:
 	_turn_panel.size = r.size
 
 
-## True when board + control column minimum heights fit the screen in portrait (tests: pinned
-## rows stay on screen). Nothing to fit while the column is hidden.
-func side_fits() -> bool:
-	if not _box.vertical or not _side.visible:
+## The overlay's rect (Main-local) for its current content, from the board-first geometry alone (the
+## board square at the play area's top-left, its dialogue banner), so it holds outside the tree too.
+func _overlay_rect() -> Rect2:
+	var play := _play_rect()
+	var board := Rect2(play.position, Vector2.ONE * board_side_for(play.size))
+	return overlay_rect_for(play, board, BoardView.banner_rect_in(board),
+			_overlay.get_combined_minimum_size(), _sections_open)
+
+
+## Floats the overlay without moving the board (overlay_rect_for).
+func _place_overlay() -> void:
+	if _overlay == null or not _overlay.visible:
+		return
+	var r := _overlay_rect()
+	_overlay.position = r.position
+	_overlay.size = r.size
+
+
+## True when the open overlay, as placed (its applied position and size), lies inside the play area
+## at its full minimum size, clear of the dialogue banner (tests: pinned answer rows stay on screen).
+## Nothing to fit while it is hidden.
+func overlay_fits() -> bool:
+	if not _overlay.visible:
 		return true
-	var m := UiStyle.num("screen_margin", 8.0)
-	var avail_y := size.y - _insets.y - _insets.w - 2.0 * m
-	return _board_view.custom_minimum_size.y + m + _side.get_combined_minimum_size().y <= avail_y + 0.5
+	var play := _play_rect()
+	var board := Rect2(play.position, Vector2.ONE * board_side_for(play.size))
+	var r := Rect2(_overlay.position, _overlay.size)
+	var need := _overlay.get_combined_minimum_size()
+	return play.encloses(r) and r.size.x + 0.5 >= need.x and r.size.y + 0.5 >= need.y \
+			and not r.intersects(BoardView.banner_rect_in(board))
 
 
 ## The debtor (maybe not the current player) becomes the Holdings actor so they can raise funds.
@@ -468,7 +526,16 @@ func _on_debt_started(debtor: Player, _creditor_id: int, _amount: int) -> void:
 
 func _on_turn_started(p: Player) -> void:
 	_holdings_panel.set_actor(p.id)
-	UiFx.pulse(_turn_label)
+
+
+## The seat the overlay serves (A0: never current_player() as such): the receiver of an open trade
+## offer that waits on a person, else the deciding seat (bidder, debtor or acting seat).
+func _served_seat() -> Player:
+	var tc := controller
+	if tc.trade_offer != null and not tc.players[tc.trade_offer.to_id].is_bot:
+		return tc.players[tc.trade_offer.to_id]
+	var id := tc.deciding_player()
+	return tc.players[id] if id >= 0 else tc.current_player()
 
 
 ## Presentation for one game event: dice and pawn motion go to the board queue; the matching
@@ -551,18 +618,29 @@ func _holdings_summary(pl: Player) -> String:
 
 func _on_status(message: String) -> void:
 	_status_label.text = message
+	_status_label.visible = message != ""
 
 
 func _refresh() -> void:
 	var tc := controller
 	var p := tc.current_player()
-	var phase := tc.phase
-	_turn_label.text = "> %s's turn  [%s]%s" % [p.display_name, "Bot" if p.is_bot else "Human",
-		"  (in %s)" % tc.board.term("jail") if p.in_jail else ""]
-	_turn_label.add_theme_color_override("font_color", p.color.lerp(Color.WHITE, 0.25))
-	if phase == TurnController.Phase.GAME_OVER:
-		_turn_label.text = "Game over"
-		_turn_label.add_theme_color_override("font_color", UiStyle.color("accent"))
+	# Level-triggered gate (MatchGate): re-read here on every state change and once the board settles.
+	var state := gate()
+	if MatchGate.panel_slots(state).is_empty():
+		_action_open = false  # Action lives in the panel states only (Q24)
+	var overlay := _action_open or MatchGate.is_forced(state)
+	var who := _served_seat()
+	# Hidden and settled: the next overlay opens fresh (Action / debt: Holdings; an offer: Trade), even
+	# after a section opened for a bot. Not while BUSY: a rent debt starts before its move ends.
+	if not overlay and _sections_open and state != MatchGate.State.BUSY:
+		collapse_sections()
+	if overlay and (not _overlay.visible or who.id != _overlay_seat):
+		_holdings_panel.set_actor(who.id)  # Holdings acts for the seat the overlay serves
+	_overlay_seat = who.id
+	_overlay.visible = overlay
+	_overlay_title.text = "%s  $%d%s" % [who.display_name, who.cash,
+		"  (in %s)" % tc.board.term("jail") if who.in_jail else ""]
+	_overlay_title.add_theme_color_override("font_color", who.color.lerp(Color.WHITE, 0.25))
 	for i in tc.players.size():
 		var pl := tc.players[i]
 		var mark := "> " if pl == p else ""
@@ -571,11 +649,6 @@ func _refresh() -> void:
 			_player_labels[i].text = "%s%s: bankrupt" % [pl.display_name, bot]
 		else:
 			_player_labels[i].text = "%s%s%s $%d%s" % [mark, pl.display_name, bot, pl.cash, _holdings_summary(pl)]
-	# Level-triggered gate (MatchGate): re-read here on every state change and once the board settles.
-	var state := gate()
-	if MatchGate.panel_slots(state).is_empty():
-		_action_open = false  # Action lives in the panel states only (Q24)
-	_side.visible = _action_open or MatchGate.is_forced(state)
 	_done_button.visible = _action_open
 	_board_view.set_die_ready(MatchGate.die_live(state) and not _action_open, p.color)
 	_turn_panel.refresh(state, _action_open)

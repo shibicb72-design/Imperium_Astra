@@ -80,7 +80,7 @@ static func die_live(state: State) -> bool:
 	return state == State.AWAIT_DIE_TAP or state == State.JAIL_SET
 
 
-## Forced inputs a person owes (auction bid, debt, trade answer), on or off turn. Dig 5a1 interim:
-## they still use the control column, shown only while needed.
+## Forced inputs a person owes (auction bid, debt, trade answer), on or off turn: Main shows them
+## in its board overlay, only while needed.
 static func is_forced(state: State) -> bool:
 	return state == State.AUCTION or state == State.DEBT or state == State.TRADE_ANSWER

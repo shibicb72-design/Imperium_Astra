@@ -98,16 +98,20 @@ func test_no_deferred_lambda_connections_in_ui() -> void:
 	done()
 
 
-## Dig 5 (A1.5): board-first play gives the board the full short side; only the Dig 5a1 interim
-## column (forced input / Action) still keeps room for the controls.
+## Dig 5 (A1.5): the board takes the full short side in both orientations; the controls float over
+## it (Dig 5a2 board overlay: inside the play area, clear of the dialogue banner) instead of taking room.
 func test_board_side_keeps_room_for_controls() -> void:
 	check_eq(Main.board_side_for(Vector2(395, 880)), 395.0, "portrait phone: full width")
 	check_eq(Main.board_side_for(Vector2(898, 395)), 395.0, "landscape phone: full height")
 	check_eq(Main.board_side_for(Vector2(917, 825)), 825.0, "unfolded Fold: board takes the full short side")
 	check_eq(Main.board_side_for(Vector2(395, 700)), 395.0, "short portrait: board keeps the full width")
-	var unfolded := Main.column_board_side_for(Vector2(917, 825))
-	check(unfolded < 825.0 and unfolded > 400.0, "interim column: unfolded Fold board shares the width")
-	check(Main.column_board_side_for(Vector2(395, 700)) < 395.0, "interim column: short portrait board shrinks")
+	for avail: Vector2 in [Vector2(917, 825), Vector2(395, 700)]:
+		var play := Rect2(Vector2(8, 8), avail)
+		var board := Rect2(play.position, Vector2.ONE * Main.board_side_for(avail))
+		var banner := BoardView.banner_rect_in(board)
+		var r := Main.overlay_rect_for(play, board, banner, Vector2(240, 240), true)
+		check(play.encloses(r) and r.size.y >= 240.0, "overlay floats inside the play area at %s" % avail)
+		check(not r.intersects(banner), "overlay clear of the banner at %s" % avail)
 	done()
 
 
@@ -199,7 +203,7 @@ func test_main_scene_smoke() -> void:
 	main.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	main.size = Vector2(411, 880)
 	main._update_layout()
-	check(not main._side.visible and main._board_view.custom_minimum_size.y == 395.0, "portrait: board fills the play width")
+	check(not main._overlay.visible and main._board_view.custom_minimum_size.y == 395.0, "portrait: board fills the play width")
 	check(main.gate() == MatchGate.State.AWAIT_DIE_TAP and main._board_view.die_ready, "die affordance live before rolling")
 	check(not main._turn_panel.visible, "no turn panel (no End Turn) before rolling")
 	_check_touch_sized(main, "main")
@@ -208,11 +212,16 @@ func test_main_scene_smoke() -> void:
 	check(main._turn_panel.offers(&"buy") and main._turn_panel.offers(&"skip"), "panel Buy + Skip once the board settles")
 	_check_touch_sized(main._turn_panel, "turn panel")
 	main.press_slot(&"skip")
-	check(main._auction_panel.visible, "auction banner shown")
+	for _i in 100:  # the bot bids first; then the person decides
+		if main.controller.phase != P.AUCTION or main.controller.bot_actor() < 0 or not main.controller.bot_step():
+			break
+	check(main.gate() == MatchGate.State.AUCTION and main._overlay.visible and main._auction_panel.visible,
+			"auction overlay for the person bidding")
+	check_eq(main._board_view.custom_minimum_size.y, 395.0, "the overlay never resizes the board")
 	check(not main._turn_panel.visible, "no turn panel during the auction")
 	main.size = Vector2(898, 395)
 	main._update_layout()
-	check(not main._side.visible and main._board_view.custom_minimum_size.x == 379.0, "landscape: board fills the play height")
+	check(main._overlay.visible and main._board_view.custom_minimum_size.x == 379.0, "landscape: board fills the play height under the overlay")
 	main.show_section(Main.Section.LOG)
 	check(not main._log_label.text.is_empty(), "log filled")
 	main.free()
@@ -237,10 +246,14 @@ func test_main_pinned_rows_fit_short_portrait() -> void:
 	offer.give_cash = 50
 	check(main.controller.propose_trade(offer), "offer open")
 	check_eq(main._section, Main.Section.TRADE, "trade tab opened for the offer")
+	check(main._overlay.visible, "answer overlay open for the receiver")
 	for s: Vector2 in [Vector2(411, 731), Vector2(360, 640), Vector2(411, 880)]:
 		main.size = s
 		main._update_layout()
-		check(main.side_fits(), "controls fit at %s" % s)
+		check(main.overlay_fits(), "answer overlay fits clear of the banner at %s" % s)
+		check_eq(main._board_view.custom_minimum_size.y, s.x - 16.0, "board keeps the full width at %s" % s)
+	main.toggle_tab(Main.Section.TRADE)
+	check(main.sections_open() and main._section == Main.Section.TRADE, "the open offer's Trade tab stays open while the answer waits")
 	check(not _inside_scroll(main._trade_panel._actions), "trade answers not in a scroll")
 	check(not _inside_scroll(main._auction_panel), "auction banner not in a scroll")
 	check(not _inside_scroll(main._debt_panel), "debt banner not in a scroll")
@@ -249,7 +262,9 @@ func test_main_pinned_rows_fit_short_portrait() -> void:
 	done()
 
 
-## Fold bugfix: sections sit on an opaque panel, the open tab collapses them, debt reopens Holdings.
+## Fold bugfix, on the Dig 5a2 board overlay: the overlay and its sections sit on opaque panels, are
+## closed at start and opened via Action; the open tab collapses them; a person's debt opens the
+## debt overlay with Holdings for the debtor.
 func test_main_sections_opaque_and_collapsible() -> void:
 	var main: Main = load("res://scenes/main.tscn").instantiate()
 	main.controller = _game()
@@ -259,10 +274,16 @@ func test_main_sections_opaque_and_collapsible() -> void:
 	main._update_layout()
 	var sb := main._section_holder.get_theme_stylebox("panel") as StyleBoxFlat
 	check(sb != null and sb.draw_center and is_equal_approx(sb.bg_color.a, 1.0), "section backing opaque")
+	var ob := main._overlay.get_theme_stylebox("panel") as StyleBoxFlat
+	check(ob != null and ob.draw_center and is_equal_approx(ob.bg_color.a, 1.0), "overlay backing opaque")
 	check(main._section_holder.clip_contents, "section area clips")
 	var acting := main._holdings_panel.get_child(0).get_child(0) as Label
 	check_eq(acting.autowrap_mode, TextServer.AUTOWRAP_OFF, "Acting label does not wrap")
-	check(main.sections_open(), "holdings open at start")
+	check(not main._overlay.visible and not main.sections_open(), "holdings closed at start")
+	main.controller.dice.force(1, 2)
+	main.press_die()
+	check(main.press_slot(&"action") and main._overlay.visible, "Action opens the overlay")
+	check(main.sections_open() and main._section == Main.Section.HOLDINGS, "Action opens holdings")
 	main.toggle_tab(Main.Section.HOLDINGS)
 	check(not main.sections_open(), "tapping the open tab collapses")
 	check(not main._section_holder.visible, "section area hidden")
@@ -274,8 +295,15 @@ func test_main_sections_opaque_and_collapsible() -> void:
 	check_eq(main._section, Main.Section.TRADE, "switching tabs keeps sections open")
 	main.toggle_tab(Main.Section.TRADE)
 	check(not main.sections_open(), "trade tab collapses too")
-	var debtor := main.controller.players[1]
-	main._on_debt_started(debtor, 0, 10)
+	main.close_action()
+	check(not main._overlay.visible, "Done closes the overlay")
+	var tc := main.controller
+	var debtor := tc.players[0]
+	main._holdings_panel.set_actor(1)
+	debtor.cash = 10
+	tc._charge(debtor, 1, 200)
+	tc._continue()
+	check(main.gate() == MatchGate.State.DEBT and main._overlay.visible and main._debt_panel.visible, "debt overlay for the person")
 	check(main.sections_open() and main._section == Main.Section.HOLDINGS, "debt force-opens holdings")
 	check_eq(main._holdings_panel.actor_id(), debtor.id, "debtor is the holdings actor")
 	main.free()

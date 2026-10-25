@@ -69,9 +69,10 @@ No trademarked names, art or logos are used; the theme is a pure data swap (`doc
 1. Open the folder in Godot 4.7.2 and press Play, or run `godot --path .`
 2. Controls (board-first, P5-FEEL Dig 5): tap the dice in the board center to roll; once your piece
    lands, a floating panel offers Claim / Skip / Action / End Turn (in the Brig: Pay fine / Use
-   pardon / Action before the roll). Action opens Holdings / Trade / Log (Dig 5a1: in a side column,
-   with Done to close; auctions, debts and trade answers use it too). Keys: Space = roll, B = claim,
-   E = end turn, each only when the matching control is on screen.
+   pardon / Action before the roll). Action opens Holdings / Trade / Log in an overlay over the
+   board, with Done to close. Auction bids, debts and trade answers float over the board the same
+   way and name the seat that must answer; the board never resizes for them. Keys: Space = roll,
+   B = claim, E = end turn, each only when the matching control is on screen.
 
 ## Tests (headless)
 
