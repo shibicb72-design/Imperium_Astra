@@ -21,3 +21,8 @@ CROSS-PLATFORM READINESS (Android ships first; desktop, iOS and web later):
 - UI uses anchors/containers and scales for any aspect ratio and DPI (landscape side-by-side, portrait stacked).
 - Platform-specific code goes behind scripts/platform/ with OS.get_name() checks and no-op fallbacks; saves use user://.
 - Renderer: Mobile. Keep export_presets.cfg Android-only for now; nothing in code may assume Android.
+
+
+MODULAR BACKBONE (Shibi Oct 24 2026): rules engine others theme off of; Auction/Build/Mortgage/Bankruptcy/Trade as separate modules; theme packs = data only.
+When EL dig says push: commit on main and git push origin main (non-force). Never force-push.
+
