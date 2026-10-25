@@ -56,6 +56,8 @@ board stays readable.
 | Railroad rent | Jump Gate toll |
 
 The house / hotel words used in game log text come from `data/board.json` `terms`
-(`house`, `houses`, `hotel`), so a theme pack swaps them as data.
+(`house`, `houses`, `hotel`), so a theme pack swaps them as data. The deck names shown on
+pardon cards in the Trade panel come from the same `terms` (`chance`, `community_chest`, keyed by
+the stable deck id).
 
 Currency is shown as `$` for now (see OPEN_QUESTIONS.md Q2).

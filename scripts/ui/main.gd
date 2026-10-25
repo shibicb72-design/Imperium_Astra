@@ -1,6 +1,6 @@
 extends Control
 ## Local hotseat match screen: BoardView plus a HUD panel (turn, cash, status, action buttons,
-## and one panel per rules module: AuctionPanel, DebtPanel, HoldingsPanel).
+## and one panel per rules module: AuctionPanel, DebtPanel, HoldingsPanel, TradePanel).
 ## Side-by-side in landscape, stacked in portrait (phones / folded Fold). Input comes from
 ## touch/mouse buttons or InputMap actions only (roll_dice, buy_property, end_turn).
 
@@ -21,6 +21,7 @@ var _pardon_button: Button
 var _auction_panel: AuctionPanel
 var _debt_panel: DebtPanel
 var _holdings_panel: HoldingsPanel
+var _trade_panel: TradePanel
 
 
 func _ready() -> void:
@@ -108,6 +109,10 @@ func _build_ui() -> void:
 	_holdings_panel = HoldingsPanel.new()
 	_holdings_panel.setup(_controller)
 	v.add_child(_holdings_panel)
+	v.add_child(HSeparator.new())
+	_trade_panel = TradePanel.new()
+	_trade_panel.setup(_controller)
+	v.add_child(_trade_panel)
 
 
 func _make_label(parent: Control, font_size: int) -> Label:
@@ -173,4 +178,5 @@ func _refresh() -> void:
 	_auction_panel.refresh()
 	_debt_panel.refresh()
 	_holdings_panel.refresh()
+	_trade_panel.refresh()
 	_board_view.queue_redraw()

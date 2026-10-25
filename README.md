@@ -19,10 +19,16 @@ No trademarked names, art or logos are used; the theme is a pure data swap (`doc
   - `bankruptcy.gd` - unpaid debts are queued; the debtor raises funds or, only if even selling
     and mortgaging everything cannot cover it, goes bankrupt to the player (all assets) or to
     the Bank (deeds auctioned). Last player standing wins.
+  - `trade.gd` - private trades: cash, unimproved deeds (mortgaged or not) and pardon cards;
+    propose / accept / reject / counter / withdraw, one open offer at a time. No deed whose
+    color set has buildings. The receiver of a mortgaged deed pays the Bank 10% of its mortgage
+    value at once and keeps the mortgage; a trade whose interest a side cannot pay is refused.
   - `TurnController` only sequences them (debts -> auctions -> buy decision -> end of landing).
-- Not yet: trades, building-shortage auctions. See `docs/OPEN_QUESTIONS.md`.
+- Not yet: building-shortage auctions. See `docs/OPEN_QUESTIONS.md`.
 - Play mode: **2-player local hotseat** (both seats human, one device). The Holdings panel lets
-  any commander build / sell / mortgage at any time, as the official rules allow.
+  any commander build / sell / mortgage at any time, and the Trade panel lets any two active
+  commanders trade at any time (also off-turn, in the Brig, or while raising funds), as the
+  official rules allow.
 
 ## Run on desktop
 

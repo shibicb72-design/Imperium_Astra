@@ -5,8 +5,8 @@ extends RefCounted
 ##
 ## Scope: roll/move, GO salary, buy, rent (auto-asked: the owner always asks in local play),
 ## taxes, cards, jail (fine / pardon card / doubles / third-turn fine), auctions, building,
-## mortgaging, debts and bankruptcy. The rules for those live in the Auction, Building, Mortgage
-## and Bankruptcy modules; this class only sequences them. Not yet: trades (OPEN_QUESTIONS.md).
+## mortgaging, trades, debts and bankruptcy. The rules for those live in the Auction, Building,
+## Mortgage, Trade and Bankruptcy modules; this class only sequences them.
 ##
 ## Payments go through _charge(): a payment the payer cannot cover becomes a queued Debt and the
 ## game enters RAISING_FUNDS until the debtor pays or goes bankrupt. After every step _continue()
@@ -22,6 +22,8 @@ signal auction_started(space_index: int)
 signal auction_ended(space_index: int, winner_id: int, amount: int)
 signal debt_started(debtor: Player, creditor_id: int, amount: int)
 signal player_bankrupt(player: Player, creditor_id: int)
+signal trade_proposed(offer: Trade.Offer)
+signal trade_resolved(offer: Trade.Offer)
 signal status(message: String)
 signal state_changed
 
@@ -46,6 +48,8 @@ var log_lines: Array[String] = []
 var auction: Auction = null
 ## Oldest first; only pending_debts[0] is being raised for.
 var pending_debts: Array[Bankruptcy.Debt] = []
+## The open trade offer awaiting its receiver, or null. One at a time.
+var trade_offer: Trade.Offer = null
 
 var _extra_turn_pending := false
 var _auction_queue: Array[int] = []
@@ -278,6 +282,84 @@ func unmortgage(player_id: int, space_index: int) -> bool:
 	return true
 
 
+# --- Trade (module: Trade); official: any time, also while jailed or raising funds -------------
+
+## Opens `offer` for its receiver. Fails while another offer is open or if the offer is invalid.
+func propose_trade(offer: Trade.Offer) -> bool:
+	if trade_offer != null or not can_manage(offer.from_id):
+		return false
+	if not Trade.is_valid(board, players, offer, config):
+		return false
+	trade_offer = offer
+	_say("%s offers %s a trade." % [players[offer.from_id].display_name, players[offer.to_id].display_name])
+	trade_proposed.emit(offer)
+	state_changed.emit()
+	return true
+
+
+## Why the open offer (or a draft) cannot go through, or "" if it can.
+func trade_problem(offer: Trade.Offer) -> String:
+	return Trade.validate(board, players, offer, config)
+
+
+func accept_trade(player_id: int) -> bool:
+	var offer := trade_offer
+	if offer == null or not can_manage(player_id):
+		return false
+	var a_interest := Trade.interest_due(board, offer.get_deeds, config)
+	var b_interest := Trade.interest_due(board, offer.give_deeds, config)
+	if not Trade.accept(board, bank, players, offer, player_id, config):
+		return false
+	trade_offer = null
+	_say("%s accepts the trade with %s." % [players[offer.to_id].display_name, players[offer.from_id].display_name])
+	if a_interest > 0:
+		_say("%s pays $%d interest to keep the mortgages." % [players[offer.from_id].display_name, a_interest])
+	if b_interest > 0:
+		_say("%s pays $%d interest to keep the mortgages." % [players[offer.to_id].display_name, b_interest])
+	trade_resolved.emit(offer)
+	state_changed.emit()
+	return true
+
+
+func reject_trade(player_id: int) -> bool:
+	var offer := trade_offer
+	if offer == null or not Trade.reject(offer, player_id):
+		return false
+	trade_offer = null
+	_say("%s rejects the trade." % players[player_id].display_name)
+	trade_resolved.emit(offer)
+	state_changed.emit()
+	return true
+
+
+## The receiver replaces the open offer with `reply`, a new offer back to the proposer.
+func counter_trade(reply: Trade.Offer) -> bool:
+	var offer := trade_offer
+	if offer == null or not can_manage(reply.from_id):
+		return false
+	if not Trade.counter(board, players, offer, reply, config):
+		return false
+	trade_offer = reply
+	_say("%s makes a counter-offer." % players[reply.from_id].display_name)
+	trade_resolved.emit(offer)
+	trade_proposed.emit(reply)
+	state_changed.emit()
+	return true
+
+
+## The proposer withdraws the open offer.
+func cancel_trade(player_id: int) -> bool:
+	var offer := trade_offer
+	if offer == null or player_id != offer.from_id:
+		return false
+	offer.status = Trade.Status.REJECTED
+	trade_offer = null
+	_say("%s withdraws the trade offer." % players[player_id].display_name)
+	trade_resolved.emit(offer)
+	state_changed.emit()
+	return true
+
+
 # --- Debts and bankruptcy (module: Bankruptcy) ------------------------------------------------
 
 func current_debt() -> Bankruptcy.Debt:
@@ -319,6 +401,9 @@ func declare_bankruptcy() -> bool:
 		if d.debtor != debtor.id:
 			remaining.append(d)
 	pending_debts = remaining
+	if trade_offer != null and debtor.id in [trade_offer.from_id, trade_offer.to_id]:
+		trade_offer.status = Trade.Status.REJECTED
+		trade_offer = null
 	if to_player:
 		var creditor := players[debt.creditor]
 		var interest := Bankruptcy.settle_to_player(board, bank, debtor, creditor, config)
@@ -339,6 +424,7 @@ func declare_bankruptcy() -> bool:
 		pending_debts.clear()
 		_auction_queue.clear()
 		auction = null
+		trade_offer = null
 		state_changed.emit()
 		return true
 	_continue()
