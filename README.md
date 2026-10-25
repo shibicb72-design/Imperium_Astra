@@ -29,6 +29,10 @@ No trademarked names, art or logos are used; the theme is a pure data swap (`doc
   any commander build / sell / mortgage at any time, and the Trade panel lets any two active
   commanders trade at any time (also off-turn, in the Brig, or while raising funds), as the
   official rules allow.
+- Who may act (P1-PHASE, `tests/test_phase.gd`): build / sell / mortgage / unmortgage / trade
+  are open to every active commander in every phase but game over, on or off turn and in the
+  Brig; jailed commanders also bid in auctions and collect rent. Only the current player rolls,
+  pays the jail fine or uses a pardon (before rolling), buys / declines, and ends the turn.
 
 ## Run on desktop
 

@@ -11,6 +11,15 @@ extends RefCounted
 ## Payments go through _charge(): a payment the payer cannot cover becomes a queued Debt and the
 ## game enters RAISING_FUNDS until the debtor pays or goes bankrupt. After every step _continue()
 ## picks the next phase: debts first, then auctions, then the buy decision, then end of landing.
+##
+## Who may act (official "any time" rules, 3.2 / 4.3 / 6.3; tests/test_phase.gd):
+## - Any time, any active commander, on or off turn and also while in the Brig, every phase but
+##   GAME_OVER (gate: can_manage): build, sell_building, sell_group_buildings, mortgage,
+##   unmortgage, propose/accept/reject/counter/cancel trade. Jail never blocks these.
+## - Current player only, by design: roll (incl. the jail doubles try), pay_jail_fine and
+##   use_get_out_of_jail_card (before rolling, AWAITING_ROLL), buy/decline, end_turn.
+## - Auction bids follow the auction's own bidder order; jailed commanders bid too.
+## - pay_debt / declare_bankruptcy belong to whoever owes pending_debts[0], on or off turn.
 
 signal turn_started(player: Player)
 signal turn_ended(player: Player)
