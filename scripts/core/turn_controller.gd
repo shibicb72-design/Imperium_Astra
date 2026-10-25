@@ -65,6 +65,8 @@ var pending_debts: Array[Bankruptcy.Debt] = []
 var trade_offer: Trade.Offer = null
 ## Heuristics for bot seats (data/bot.json); see Bot and bot_step().
 var bot_settings: Bot.Settings = null
+## The current (bot) player already tried a trade proposal this turn; reset by end_turn().
+var bot_proposed_this_turn := false
 
 var _extra_turn_pending := false
 var _auction_queue: Array[int] = []
@@ -505,6 +507,7 @@ func end_turn() -> void:
 		return
 	turn_ended.emit(current_player())
 	doubles_streak = 0
+	bot_proposed_this_turn = false
 	for step in range(1, players.size() + 1):
 		var next := (current_index + step) % players.size()
 		if not players[next].is_bankrupt:
@@ -708,12 +711,15 @@ func deciding_player() -> int:
 	return current_index
 
 
-## The bot that must act now, or -1. A trade offer to a bot is answered first.
+## The bot that must act now, or -1. A trade offer to a bot is answered first; a bot's offer to a
+## person pauses the bots until that person answers.
 func bot_actor() -> int:
 	if phase == Phase.GAME_OVER:
 		return -1
 	if trade_offer != null and players[trade_offer.to_id].is_bot:
 		return trade_offer.to_id
+	if trade_offer != null and players[trade_offer.from_id].is_bot:
+		return -1
 	var id := deciding_player()
 	return id if id >= 0 and players[id].is_bot else -1
 
@@ -780,6 +786,11 @@ func _apply_bot_action(a: Bot.Action) -> bool:
 			return accept_trade(pid)
 		Bot.Kind.REJECT_TRADE:
 			return reject_trade(pid)
+		Bot.Kind.PROPOSE_TRADE:
+			bot_proposed_this_turn = true
+			return propose_trade(a.offer)
+		Bot.Kind.COUNTER_TRADE:
+			return counter_trade(a.offer)
 		Bot.Kind.END_TURN:
 			if phase != Phase.AWAITING_END_TURN:
 				return false

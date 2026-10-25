@@ -201,7 +201,7 @@ func test_bankrupt_when_nothing_covers_debt() -> void:
 	done()
 
 
-func test_trades_only_clear_cash_for_deed() -> void:
+func test_trade_answers_cash_for_deed() -> void:
 	var tc := _game([1])
 	_give(tc, 1, [3, 6])
 	var fair := Trade.propose(0, 1)
@@ -216,15 +216,19 @@ func test_trades_only_clear_cash_for_deed() -> void:
 	cheap.give_cash = 140  # deed 6 lists at 100: needs 150
 	cheap.get_deeds = [6] as Array[int]
 	check(tc.propose_trade(cheap), "cheap offer open")
+	check_eq(Bot.decide(tc, 1).kind, K.COUNTER_TRADE, "small shortfall: counter")
 	check(tc.bot_step(), "answered")
-	check_eq(tc.board.deed_at(6).owner, 1, "lowball refused")
+	check_eq(tc.board.deed_at(6).owner, 1, "lowball not taken")
+	check_eq(tc.trade_offer.get_cash, 150, "counter asks the full price")
+	check_eq(tc.bot_actor(), -1, "bots wait for the person to answer")
+	check(tc.reject_trade(0), "person rejects the counter")
 	var swap := Trade.propose(0, 1)
 	swap.give_deeds = [3] as Array[int]
 	swap.get_deeds = [6] as Array[int]
 	swap.give_cash = 500
 	check(tc.propose_trade(swap), "swap open")
-	check_eq(Bot.decide(tc, 1).kind, K.REJECT_TRADE, "deed swaps are too complex")
-	tc.bot_step()
+	check_eq(Bot.decide(tc, 1).kind, K.ACCEPT_TRADE, "a deed plus $500 for a $100 deed is +EV")
+	check(tc.bot_step(), "accepted")
 	# Completing the proposer's color set is refused at any price.
 	var tc2 := _game([1])
 	_give(tc2, 0, [1])

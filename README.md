@@ -29,8 +29,9 @@ No trademarked names, art or logos are used; the theme is a pure data swap (`doc
   reads the match and returns one action; `TurnController.bot_step()` applies it through the same
   public actions people use, so bots follow every rule check. The UI plays bot steps on a timer
   (`data/ui.json` `bot_step_seconds`). Heuristics: buy / bid / build only while $200 stays, bid up
-  to list price, even-build the cheapest street, mortgage only to pay debts, refuse all trades but
-  clearly +EV cash-for-deed offers. Seats: `GameSetup.seats(humans, bots)` or
+  to list price, even-build the cheapest street, mortgage only to pay debts. Trades (`bot_trade.gd`,
+  P3): score deeds, cash and color sets; accept fair deals, counter once with a cash fix, refuse to
+  hand over a monopoly; propose at most one set-completing or monopoly-blocking deal per turn. Seats: `GameSetup.seats(humans, bots)` or
   `GameSetup.seats_for(bot_flags)` in seat order (2-6 total).
 - P2 setup (`scripts/ui/setup_panel.gd`): before each match a setup screen picks 2, 3 or 4 seats
   and Human/Bot per seat (default seat 1 Human, seat 2 Bot), then Start opens the board. Start

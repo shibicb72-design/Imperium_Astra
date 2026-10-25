@@ -1,9 +1,14 @@
 {
-  "_doc": "Tunables for the simple hotseat bot (scripts/core/bot.gd). Not rule numbers: themes never edit this file. cash_buffer: cash the bot keeps after buying, bidding, building or paying the jail fine. auction_max_price_percent: highest bid as a percent of the deed's list price. unmortgage_min_cash_after: cash the bot must still hold after lifting a mortgage. trade_min_cash_percent: the bot accepts a cash-for-deed offer only if the cash is at least this percent of the deeds' list prices.",
+  "_doc": "Tunables for the simple hotseat bot (scripts/core/bot.gd, scripts/core/bot_trade.gd). Not rule numbers: themes never edit this file. cash_buffer: cash the bot keeps after buying, bidding, building, paying the jail fine or trading. auction_max_price_percent: highest bid as a percent of the deed's list price. unmortgage_min_cash_after: cash the bot must still hold after lifting a mortgage. trade_min_cash_percent: a pure sale (bot gives deeds, gets none back) must be worth at least this percent of the given deeds' list prices. trade_swap_min_percent: same bar when deeds come back. complete_set_bonus_percent: a full color set is worth this percent of the set's total list price on top of the deeds. monopoly_block_bonus_percent: buying from a person the one deed another commander lacks for a set is worth this percent of the set's total list price. trade_counter_max_percent: the bot counters (asking the shortfall in cash) only when the shortfall is at most this percent of the given deeds' list prices. trade_max_surplus_deeds: most spare deeds a bot adds to its own proposal when cash alone would break cash_buffer.",
   "_placeholder": true,
   "TODO": "Heuristic values are first guesses, not product decisions (docs/OPEN_QUESTIONS.md Q18).",
   "cash_buffer": 200,
   "auction_max_price_percent": 100,
   "unmortgage_min_cash_after": 500,
-  "trade_min_cash_percent": 150
+  "trade_min_cash_percent": 150,
+  "trade_swap_min_percent": 110,
+  "complete_set_bonus_percent": 100,
+  "monopoly_block_bonus_percent": 50,
+  "trade_counter_max_percent": 50,
+  "trade_max_surplus_deeds": 2
 }

@@ -24,6 +24,8 @@ class Offer:
 	var give_cards: Array[StringName] = []
 	var get_cards: Array[StringName] = []
 	var status: Status = Status.PENDING
+	## Set by counter(): this offer answers another one (bots never counter a counter).
+	var is_counter: bool = false
 
 	func _init(p_from: int, p_to: int) -> void:
 		from_id = p_from
@@ -130,6 +132,7 @@ static func counter(board: Board, players: Array[Player], offer: Offer, reply: O
 	if not is_valid(board, players, reply, config):
 		return false
 	offer.status = Status.COUNTERED
+	reply.is_counter = true
 	return true
 
 

@@ -13,26 +13,28 @@ extends RefCounted
 ## - Jail: pardon card, else pay the fine if cash_buffer stays, else roll; on the last try pay first.
 ## - Debt: pay if cash covers it; bankrupt if even full liquidation cannot; else sell buildings
 ##   (highest level first), then mortgage (deeds outside full sets first, cheapest first).
-## - Trade: never proposes; accepts only plain cash-for-deed offers worth trade_min_cash_percent
-##   of list price that do not hand the proposer a full color set. Everything else is rejected.
+## - Trade (BotTrade): answers offers by scoring deeds, cash and color sets (accept / counter once /
+##   reject); on its own turn, before building, proposes at most one deal that completes its set or
+##   blocks another commander's set.
 
 enum Kind {
 	NONE, ROLL, PAY_JAIL_FINE, USE_PARDON, BUY, DECLINE, BID, PASS_AUCTION, BUILD, SELL_BUILDING,
 	SELL_GROUP, MORTGAGE, UNMORTGAGE, PAY_DEBT, DECLARE_BANKRUPTCY, ACCEPT_TRADE, REJECT_TRADE,
-	END_TURN,
+	END_TURN, PROPOSE_TRADE, COUNTER_TRADE,
 }
 
 const P := TurnController.Phase
 
 
 ## One decision. `space_index` for BUILD / SELL_BUILDING / MORTGAGE / UNMORTGAGE, `amount` for BID,
-## `group_id` for SELL_GROUP.
+## `group_id` for SELL_GROUP, `offer` for PROPOSE_TRADE / COUNTER_TRADE.
 class Action:
 	var kind: Kind
 	var player_id: int
 	var space_index: int = -1
 	var amount: int = 0
 	var group_id: StringName = &""
+	var offer: Trade.Offer = null
 
 	func _init(p_kind: Kind, p_player_id: int) -> void:
 		kind = p_kind
@@ -45,6 +47,11 @@ class Settings:
 	var auction_max_price_percent: int
 	var unmortgage_min_cash_after: int
 	var trade_min_cash_percent: int
+	var trade_swap_min_percent: int
+	var complete_set_bonus_percent: int
+	var monopoly_block_bonus_percent: int
+	var trade_counter_max_percent: int
+	var trade_max_surplus_deeds: int
 
 	static func from_dict(d: Dictionary) -> Settings:
 		var s := Settings.new()
@@ -52,6 +59,11 @@ class Settings:
 		s.auction_max_price_percent = int(d["auction_max_price_percent"])
 		s.unmortgage_min_cash_after = int(d["unmortgage_min_cash_after"])
 		s.trade_min_cash_percent = int(d["trade_min_cash_percent"])
+		s.trade_swap_min_percent = int(d["trade_swap_min_percent"])
+		s.complete_set_bonus_percent = int(d["complete_set_bonus_percent"])
+		s.monopoly_block_bonus_percent = int(d["monopoly_block_bonus_percent"])
+		s.trade_counter_max_percent = int(d["trade_counter_max_percent"])
+		s.trade_max_surplus_deeds = int(d["trade_max_surplus_deeds"])
 		return s
 
 
@@ -66,8 +78,7 @@ static func decide(tc: TurnController, pid: int) -> Action:
 		var hand_on := tc.phase == P.AWAITING_END_TURN and tc.current_index == pid
 		return Action.new(Kind.END_TURN if hand_on else Kind.NONE, pid)
 	if tc.trade_offer != null and tc.trade_offer.to_id == pid:
-		var ok := wants_trade(tc, tc.trade_offer)
-		return Action.new(Kind.ACCEPT_TRADE if ok else Kind.REJECT_TRADE, pid)
+		return BotTrade.answer(tc, tc.trade_offer)
 	if tc.deciding_player() != pid:
 		return Action.new(Kind.NONE, pid)
 	match tc.phase:
@@ -117,7 +128,8 @@ static func _auction(tc: TurnController, p: Player, s: Settings) -> Action:
 	return Action.new(Kind.PASS_AUCTION, p.id)
 
 
-## Lift a mortgage, else build one level; null when there is nothing worth doing.
+## Lift a mortgage, else propose a trade (once per turn), else build one level; null when there is
+## nothing worth doing.
 static func _manage(tc: TurnController, p: Player, s: Settings) -> Action:
 	var best_lift: PropertyDeed = null
 	var best_lift_cost := 0
@@ -132,6 +144,12 @@ static func _manage(tc: TurnController, p: Player, s: Settings) -> Action:
 		var a := Action.new(Kind.UNMORTGAGE, p.id)
 		a.space_index = best_lift.space_index
 		return a
+	if tc.trade_offer == null and not tc.bot_proposed_this_turn:
+		var deal := BotTrade.proposal(tc, p)
+		if deal != null:
+			var a := Action.new(Kind.PROPOSE_TRADE, p.id)
+			a.offer = deal
+			return a
 	var target := build_target(tc, p, s)
 	if target != null:
 		var a := Action.new(Kind.BUILD, p.id)
@@ -199,32 +217,3 @@ static func _raise_funds(tc: TurnController, p: Player) -> Action:
 static func _mortgage_rank(tc: TurnController, p: Player, d: PropertyDeed) -> int:
 	var in_set := tc.board.owns_full_group(p.id, d.color_group_id)
 	return (100000 if in_set else 0) + d.mortgage_value
-
-
-## True only for a plain cash-for-deed offer to this bot: cash in, deeds out, nothing else, at
-## least trade_min_cash_percent of list price, and no deed that completes the proposer's color set.
-static func wants_trade(tc: TurnController, offer: Trade.Offer) -> bool:
-	if not offer.give_deeds.is_empty() or not offer.give_cards.is_empty():
-		return false
-	if offer.get_cash != 0 or not offer.get_cards.is_empty() or offer.get_deeds.is_empty():
-		return false
-	if not Trade.is_valid(tc.board, tc.players, offer, tc.config):
-		return false
-	var value := 0
-	for i in offer.get_deeds:
-		var d := tc.board.deed_at(i)
-		value += d.list_price
-		if tc.board.owns_full_group(offer.to_id, d.color_group_id):
-			return false
-		if _completes_set(tc, offer.from_id, d.color_group_id, offer.get_deeds):
-			return false
-	return offer.give_cash * 100 >= value * tc.bot_settings.trade_min_cash_percent
-
-
-static func _completes_set(tc: TurnController, buyer_id: int, group_id: StringName, incoming: Array[int]) -> bool:
-	if not tc.board.color_groups.has(group_id):
-		return false
-	for i: int in tc.board.color_groups[group_id]:
-		if tc.board.deed_at(i).owner != buyer_id and not incoming.has(i):
-			return false
-	return true
