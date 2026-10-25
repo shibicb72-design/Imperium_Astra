@@ -9,6 +9,9 @@ extends PanelContainer
 ## Presentation only: emits start_requested(seats) and the owner builds the match.
 
 signal start_requested(seats: Array[Dictionary])
+signal theme_requested(id: String)
+
+var theme_picker: OptionButton
 
 const SECTION := "setup"
 
@@ -95,6 +98,9 @@ func start() -> void:
 
 ## Rebuilds the screen from the active theme pack (after UiStyle.set_theme), keeping the seat choice.
 func refresh_theme() -> void:
+	# Keep the picker alive: it may be emitting item_selected during this rebuild.
+	if is_instance_valid(theme_picker) and theme_picker.get_parent() != null:
+		theme_picker.get_parent().remove_child(theme_picker)
 	for c in get_children():
 		remove_child(c)
 		if is_inside_tree():
@@ -121,7 +127,23 @@ func _build_ui() -> void:
 	_margin.add_child(box)
 
 	UiStyle.label(box, "New match", "title")
-	UiStyle.label(box, "Players", "small")
+	UiStyle.label(box, "Theme", "small")
+	if not is_instance_valid(theme_picker):
+		theme_picker = UiStyle.picker(box)
+		theme_picker.item_selected.connect(_on_theme_selected)
+	else:
+		box.add_child(theme_picker)
+		theme_picker.clear()
+	for pack in UiStyle.theme_packs():
+		if not FileAccess.file_exists(String(pack["theme_path"])):
+			continue
+		var pack_data := JsonData.load_json(String(pack["theme_path"]))
+		theme_picker.add_item(String(pack_data.get("display_name", pack["id"])))
+		var item := theme_picker.item_count - 1
+		theme_picker.set_item_metadata(item, pack["id"])
+		if String(pack["theme_path"]) == UiStyle.active_theme_path():
+			theme_picker.select(item)
+	UiStyle.label(box, String(UiStyle.content_overlay().get("terms", {}).get("players", "Players")).capitalize(), "small")
 	var counts := HBoxContainer.new()
 	counts.add_theme_constant_override("separation", 6)
 	box.add_child(counts)
@@ -164,6 +186,10 @@ func _build_ui() -> void:
 
 	_hint_label = UiStyle.label(box, "", "small")
 	_start_button = UiStyle.button(box, "Start", start)
+
+
+func _on_theme_selected(index: int) -> void:
+	theme_requested.emit(String(theme_picker.get_item_metadata(index)))
 
 
 func _apply_margins() -> void:

@@ -76,6 +76,7 @@ func show_setup(window: Window) -> SetupPanel:
 	add_child(panel)
 	panel.setup(_scale)
 	UiFx.fade_in(panel)
+	panel.theme_requested.connect(select_theme)
 	panel.start_requested.connect(func(seats: Array[Dictionary]) -> void:
 		_setup_panel = null
 		remove_child(panel)
@@ -382,6 +383,11 @@ func _on_turn_started(p: Player) -> void:
 func _on_game_event(kind: StringName, info: Dictionary) -> void:
 	var pid := int(info.get("player", -1))
 	match kind:
+		&"built_house", &"built_hotel", &"sold_house", &"sold_hotel":
+			_board_view.building_pop(int(info["space"]), kind in [&"sold_house", &"sold_hotel"],
+				kind in [&"built_hotel", &"sold_hotel"], int(info.get("count", info.get("houses", 1))))
+		&"bankrupt":
+			_board_view.fade_out_piece(pid, UiStyle.num("bankrupt_fade_seconds", 0.8))
 		&"rolled":
 			_board_view.queue_dice(int(info["d1"]), int(info["d2"]))
 		&"moved":

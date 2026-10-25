@@ -148,8 +148,13 @@ static func int_list(key: String, fallback: Array[int]) -> Array[int]:
 	return out
 
 
-## Root theme: body font size everywhere, roomier popup rows (OptionButton lists) for touch,
-## and the theme pack's colors / StyleBoxes on buttons, panels, inputs and popups.
+## Optional pack-selected display face; body text keeps the built-in fallback.
+static func display_font() -> Font:
+	var path := String(theme_data().get("display_font_path", ""))
+	return load(path) as Font if path != "" and ResourceLoader.exists(path) else ThemeDB.fallback_font
+
+
+## Root theme: body sizes, touch popup rows, pack colors and StyleBoxes.
 static func make_theme() -> Theme:
 	var t := Theme.new()
 	t.default_font_size = font("body")
@@ -215,6 +220,7 @@ static func label(parent: Control, text: String, role: String = "body") -> Label
 	l.text = text
 	l.add_theme_font_size_override("font_size", font(role))
 	if role == "title":
+		l.add_theme_font_override("font", display_font())
 		l.add_theme_color_override("font_color", color("accent"))
 	elif role == "small":
 		l.add_theme_color_override("font_color", color("text_muted"))

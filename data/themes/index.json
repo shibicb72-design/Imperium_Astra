@@ -1,6 +1,13 @@
 {
   "_doc": "Registered theme packs (P5-FEEL A4). Explicit list, not a directory scan, so pack discovery is deterministic and survives export filters. Each entry: id (matches the pack's theme.json id) and theme_path (res:// path to its theme.json). data/ui.json theme_path is the shipped default; UiStyle.set_theme(id) picks another listed pack for the current app session only (never saved). See docs/THEME_MAP.md.",
   "packs": [
-    {"id": "imperium_astra", "theme_path": "res://data/themes/imperium_astra/theme.json"}
+    {
+      "id": "imperium_astra",
+      "theme_path": "res://data/themes/imperium_astra/theme.json"
+    },
+    {
+      "id": "astra_alt",
+      "theme_path": "res://data/themes/astra_alt/theme.json"
+    }
   ]
 }

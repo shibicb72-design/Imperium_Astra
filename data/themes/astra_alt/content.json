@@ -1,0 +1,200 @@
+{
+  "_doc": "Words-only alternate pack. Six seat names in shared seat_pool order. Optional card_text omitted: shared card wording is accepted.",
+  "id": "astra_alt",
+  "seat_names": [
+    "Pilot 1",
+    "Pilot 2",
+    "Pilot 3",
+    "Pilot 4",
+    "Pilot 5",
+    "Pilot 6"
+  ],
+  "terms": {
+    "house": "habitat",
+    "houses": "habitats",
+    "hotel": "Starbase",
+    "chance": "Flight Signal",
+    "community_chest": "Fleet Bulletin",
+    "jail": "the Hold",
+    "jail_fine": "Hold fine",
+    "buy": "Acquire",
+    "pardon": "Release card",
+    "bank": "the Reserve",
+    "buys": "acquires",
+    "unowned": "available",
+    "player": "pilot",
+    "players": "pilots"
+  },
+  "group_names": {
+    "brown": "Survey Zone 1",
+    "light_blue": "Survey Zone 2",
+    "pink": "Survey Zone 3",
+    "orange": "Survey Zone 4",
+    "red": "Survey Zone 5",
+    "yellow": "Survey Zone 6",
+    "green": "Survey Zone 7",
+    "dark_blue": "Survey Zone 8"
+  },
+  "space_names": {
+    "0": {
+      "display_name": "Departure Dock",
+      "short_name": "Departure Dock"
+    },
+    "1": {
+      "display_name": "Sector 2",
+      "short_name": "Sector 2"
+    },
+    "2": {
+      "display_name": "Fleet Bulletin",
+      "short_name": "Fleet Bulletin"
+    },
+    "3": {
+      "display_name": "Sector 4",
+      "short_name": "Sector 4"
+    },
+    "4": {
+      "display_name": "Sector 5",
+      "short_name": "Sector 5"
+    },
+    "5": {
+      "display_name": "Sector 6",
+      "short_name": "Sector 6"
+    },
+    "6": {
+      "display_name": "Sector 7",
+      "short_name": "Sector 7"
+    },
+    "7": {
+      "display_name": "Flight Signal",
+      "short_name": "Flight Signal"
+    },
+    "8": {
+      "display_name": "Sector 9",
+      "short_name": "Sector 9"
+    },
+    "9": {
+      "display_name": "Sector 10",
+      "short_name": "Sector 10"
+    },
+    "10": {
+      "display_name": "The Hold",
+      "short_name": "The Hold"
+    },
+    "11": {
+      "display_name": "Sector 12",
+      "short_name": "Sector 12"
+    },
+    "12": {
+      "display_name": "Sector 13",
+      "short_name": "Sector 13"
+    },
+    "13": {
+      "display_name": "Sector 14",
+      "short_name": "Sector 14"
+    },
+    "14": {
+      "display_name": "Sector 15",
+      "short_name": "Sector 15"
+    },
+    "15": {
+      "display_name": "Sector 16",
+      "short_name": "Sector 16"
+    },
+    "16": {
+      "display_name": "Sector 17",
+      "short_name": "Sector 17"
+    },
+    "17": {
+      "display_name": "Fleet Bulletin",
+      "short_name": "Fleet Bulletin"
+    },
+    "18": {
+      "display_name": "Sector 19",
+      "short_name": "Sector 19"
+    },
+    "19": {
+      "display_name": "Sector 20",
+      "short_name": "Sector 20"
+    },
+    "20": {
+      "display_name": "Quiet Orbit",
+      "short_name": "Quiet Orbit"
+    },
+    "21": {
+      "display_name": "Sector 22",
+      "short_name": "Sector 22"
+    },
+    "22": {
+      "display_name": "Flight Signal",
+      "short_name": "Flight Signal"
+    },
+    "23": {
+      "display_name": "Sector 24",
+      "short_name": "Sector 24"
+    },
+    "24": {
+      "display_name": "Sector 25",
+      "short_name": "Sector 25"
+    },
+    "25": {
+      "display_name": "Sector 26",
+      "short_name": "Sector 26"
+    },
+    "26": {
+      "display_name": "Sector 27",
+      "short_name": "Sector 27"
+    },
+    "27": {
+      "display_name": "Sector 28",
+      "short_name": "Sector 28"
+    },
+    "28": {
+      "display_name": "Sector 29",
+      "short_name": "Sector 29"
+    },
+    "29": {
+      "display_name": "Sector 30",
+      "short_name": "Sector 30"
+    },
+    "30": {
+      "display_name": "Report to the Hold",
+      "short_name": "To the Hold"
+    },
+    "31": {
+      "display_name": "Sector 32",
+      "short_name": "Sector 32"
+    },
+    "32": {
+      "display_name": "Sector 33",
+      "short_name": "Sector 33"
+    },
+    "33": {
+      "display_name": "Fleet Bulletin",
+      "short_name": "Fleet Bulletin"
+    },
+    "34": {
+      "display_name": "Sector 35",
+      "short_name": "Sector 35"
+    },
+    "35": {
+      "display_name": "Sector 36",
+      "short_name": "Sector 36"
+    },
+    "36": {
+      "display_name": "Flight Signal",
+      "short_name": "Flight Signal"
+    },
+    "37": {
+      "display_name": "Sector 38",
+      "short_name": "Sector 38"
+    },
+    "38": {
+      "display_name": "Sector 39",
+      "short_name": "Sector 39"
+    },
+    "39": {
+      "display_name": "Sector 40",
+      "short_name": "Sector 40"
+    }
+  }
+}

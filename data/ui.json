@@ -18,12 +18,26 @@
   "panel_fade_seconds": 0.18,
   "screen_fade_seconds": 0.35,
   "pulse_seconds": 0.35,
-  "setup_seat_counts": [2, 3, 4],
+  "setup_seat_counts": [
+    2,
+    3,
+    4
+  ],
   "setup_default_count": 2,
-  "setup_default_bots": [false, true, true, true],
+  "setup_default_bots": [
+    false,
+    true,
+    true,
+    true
+  ],
   "setup_min_humans": 1,
   "setup_min_humans_TODO": "at least one person by default; all-bot matches stay possible in GameSetup for headless soak (docs/OPEN_QUESTIONS.md Q19)",
-  "auction_quick_bid_steps": [1, 10, 50, 100],
+  "auction_quick_bid_steps": [
+    1,
+    10,
+    50,
+    100
+  ],
   "touch_target": 48,
   "font_small": 14,
   "font_body": 16,
@@ -32,6 +46,12 @@
   "screen_margin": 8,
   "board_max_share_portrait": 0.48,
   "board_max_share_landscape": 0.58,
-  "trade_cash_steps": [10, 100],
-  "log_lines_shown": 60
+  "trade_cash_steps": [
+    10,
+    100
+  ],
+  "log_lines_shown": 60,
+  "building_pop_seconds": 0.32,
+  "building_pop_scale": 1.8,
+  "bankrupt_fade_seconds": 0.8
 }

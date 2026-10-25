@@ -1,0 +1,79 @@
+{
+  "lines": {
+    "match_start": [
+      "Flight roster ready. {name} takes the helm."
+    ],
+    "roll": [
+      "{name} charts {total} spaces."
+    ],
+    "roll_bot": [
+      "Autopilot charts {total} for {name}."
+    ],
+    "doubles": [
+      "Twin signals: {name} flies again."
+    ],
+    "passed_go": [
+      "Departure allowance: {name} receives {amount}."
+    ],
+    "landed_unowned": [
+      "Survey complete: {space} is available for {price}."
+    ],
+    "bought": [
+      "{name} secures {space}."
+    ],
+    "auction_won": [
+      "Final offer: {name} takes {space} for {amount}."
+    ],
+    "auction_unsold": [
+      "{space} awaits another buyer."
+    ],
+    "rent_paid": [
+      "Docking account: {name} sends {owner} {amount}."
+    ],
+    "tax": [
+      "Fleet assessment: {name} pays {amount}."
+    ],
+    "card_chance": [
+      "Incoming {deck}: {text}"
+    ],
+    "card_community": [
+      "New {deck}: {text}"
+    ],
+    "jail_enter": [
+      "{name} is confined to the Hold."
+    ],
+    "jail_exit_fine": [
+      "Fine cleared. {name} leaves the Hold."
+    ],
+    "jail_exit_pardon": [
+      "Release authorized for {name}."
+    ],
+    "jail_exit_doubles": [
+      "Twin signals release {name}."
+    ],
+    "jail_exit_forced": [
+      "Time served; {name} pays and departs."
+    ],
+    "bankrupt": [
+      "{name} closes their flight account."
+    ],
+    "trade_proposed": [
+      "{name} sends {other} an exchange proposal."
+    ],
+    "trade_accepted": [
+      "{name} confirms the exchange with {other}."
+    ],
+    "trade_rejected": [
+      "{name} declines the exchange."
+    ],
+    "trade_countered": [
+      "{name} returns revised terms."
+    ],
+    "trade_withdrawn": [
+      "{name} recalls the proposal."
+    ],
+    "game_over": [
+      "Survey complete. {name} leads the fleet!"
+    ]
+  }
+}

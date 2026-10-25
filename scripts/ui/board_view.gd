@@ -79,6 +79,8 @@ var _rng := RandomNumberGenerator.new()
 var _pieces: Dictionary = {}
 ## Bankrupt pieces still fading out (player id -> [seconds left, total seconds]).
 var _fading: Dictionary = {}
+## Transient building feedback, independent of the movement queue.
+var _building_fx: Array[Dictionary] = []
 
 
 func _init() -> void:
@@ -89,8 +91,15 @@ func _init() -> void:
 
 
 func setup(tc: TurnController) -> void:
+	clear_pieces()
+	_building_fx.clear()
 	controller = tc
 	sync_to_game()
+	for player in tc.players:
+		var piece := SpacePiece.new()
+		piece.tint = player.color
+		piece.seat = player.id
+		attach_piece(player.id, piece)
 
 
 ## Redraws board chrome from the active theme pack (after UiStyle.set_theme). Queued motion is kept.
@@ -216,6 +225,7 @@ func advance(delta: float) -> void:
 
 
 func _process(delta: float) -> void:
+	advance_building_fx(delta)
 	if not _item.is_empty():
 		advance(delta)
 	if not _fading.is_empty():
@@ -419,7 +429,7 @@ func _draw() -> void:
 		return
 	var br := _board_rect()
 	var cell := br.size.x / GRID
-	var font := ThemeDB.fallback_font
+	var font := UiStyle.display_font()
 	var gold := UiStyle.color("accent")
 	var cell_color := UiStyle.color("board_cell")
 	var border := UiStyle.color("board_border")
@@ -440,10 +450,7 @@ func _draw() -> void:
 		draw_rect(r, border, false, 1.0)
 		if is_corner:
 			_draw_label(font, Rect2(r.position + Vector2(2, cell * 0.12), Vector2(cell - 4, cell * 0.5)), s.short_name)
-			var mark := corner_mark(s.space_type)
-			if mark != "":
-				var ms := maxi(MIN_LABEL_FONT, int(cell * 0.16))
-				draw_string(font, r.position + Vector2(0, cell * 0.78), mark, HORIZONTAL_ALIGNMENT_CENTER, cell, ms, gold)
+			_draw_corner_icon(r, s.space_type, gold)
 		else:
 			_draw_label(font, Rect2(r.position + Vector2(1, top + 1), Vector2(cell - 2, cell * 0.78 - top)), s.short_name)
 		if s.deed != null and s.deed.owner != PropertyDeed.BANK:
@@ -460,6 +467,7 @@ func _draw() -> void:
 	draw_rect(br.grow(-frame * 0.5), UiStyle.color("board_frame"), false, frame)
 	draw_rect(Rect2(br.position + Vector2(cell, cell), Vector2(cell, cell) * 9.0), UiStyle.color("accent_dim"), false,
 			UiStyle.theme_num("board", "center_rule_width", 2))
+	_draw_building_fx(br, cell)
 	_draw_tokens(br, cell)
 	_draw_center(br, cell, font)
 
@@ -641,3 +649,55 @@ func space_details(index: int) -> PackedStringArray:
 	else:
 		out.append("Mortgage $%d" % deed.mortgage_value)
 	return out
+
+
+## Build expands; sale contracts. Snapshot pips survive the final sell-to-zero frame.
+func building_pop(index: int, selling: bool, hotel: bool, count: int) -> void:
+	if not animate:
+		return
+	_building_fx.append({"index": index, "selling": selling, "hotel": hotel,
+		"count": maxi(1, count), "elapsed": 0.0})
+	queue_redraw()
+
+
+func advance_building_fx(delta: float) -> void:
+	if _building_fx.is_empty():
+		return
+	for i in range(_building_fx.size() - 1, -1, -1):
+		_building_fx[i]["elapsed"] += delta
+		if float(_building_fx[i]["elapsed"]) >= UiStyle.num("building_pop_seconds", 0.32):
+			_building_fx.remove_at(i)
+	queue_redraw()
+
+
+func _draw_building_fx(br: Rect2, cell: float) -> void:
+	for fx in _building_fx:
+		var t := clampf(float(fx["elapsed"]) / UiStyle.num("building_pop_seconds", 0.32), 0, 1)
+		var center := br.position + Vector2(cell_of(int(fx["index"]))) * cell + Vector2(cell * 0.5, cell * 0.12)
+		var amount := UiStyle.num("building_pop_scale", 1.8)
+		var zoom := lerpf(amount, 0.1, t) if fx["selling"] else 1.0 + sin(t * PI) * (amount - 1.0)
+		var tint := Color(UiStyle.color("accent") if fx["hotel"] else UiStyle.color("text"), 1.0 - t)
+		var count := 1 if fx["hotel"] else mini(4, int(fx["count"]))
+		for i in count:
+			var width := cell * (0.4 if fx["hotel"] else 0.14) * zoom
+			var offset := Vector2((i - (count - 1) * 0.5) * cell * 0.22, 0)
+			draw_rect(Rect2(center + offset - Vector2(width, cell * 0.14 * zoom) * 0.5,
+				Vector2(width, cell * 0.14 * zoom)), tint)
+
+
+## Original vector corner symbols; stable space types choose presentation only.
+func _draw_corner_icon(rect: Rect2, kind: int, tint: Color) -> void:
+	var c := rect.position + rect.size * Vector2(0.5, 0.72)
+	var r := rect.size.x * 0.14
+	match kind:
+		Space.Type.GO:
+			draw_colored_polygon(PackedVector2Array([c + Vector2(-r, r), c + Vector2(0, -r), c + Vector2(r, r), c]), tint)
+		Space.Type.JAIL_CORNER, Space.Type.GO_TO_JAIL:
+			draw_rect(Rect2(c - Vector2(r, r), Vector2.ONE * r * 2), tint, false, 1.5)
+			for x in [-0.5, 0.0, 0.5]:
+				draw_line(c + Vector2(r * x, -r), c + Vector2(r * x, r), tint, 1.5)
+			if kind == Space.Type.GO_TO_JAIL:
+				draw_line(c + Vector2(-r * 2, 0), c, tint, 2)
+		Space.Type.FREE_PARKING:
+			draw_arc(c, r, 0, TAU, 24, tint, 1.5, true)
+			draw_line(c + Vector2(-r * 1.5, 0), c + Vector2(r * 1.5, 0), tint, 1.5)
