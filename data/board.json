@@ -1,5 +1,6 @@
 {
   "_doc": "40 spaces, clockwise, index 0 = Launch Bay (GO). space_type, prices, rents and tax amounts are the classic US values from docs/classic_monopoly_structure.md (1.3-1.7) and must not change for a theme swap; only display_name and group display_name/color are theme data (see docs/THEME_MAP.md). rent = [0 houses, 1, 2, 3, 4, hotel]; the color-set double for unimproved streets is applied by Rules, not stored. mortgage_value = half list price (COMMUNITY/SECONDARY per the md 1.4). hotel_cost = house_cost (OFFICIAL H-C1009 deed wording).",
+  "terms": {"house": "outpost module", "houses": "outpost modules", "hotel": "Citadel"},
   "groups": {
     "brown": {"display_name": "Belt Outposts", "color": "#8d5a3b"},
     "light_blue": {"display_name": "Selene Domes", "color": "#8fd3f4"},

@@ -1,5 +1,6 @@
 extends Control
-## Local hotseat match screen: BoardView plus a HUD panel (turn, cash, status, action buttons).
+## Local hotseat match screen: BoardView plus a HUD panel (turn, cash, status, action buttons,
+## and one panel per rules module: AuctionPanel, DebtPanel, HoldingsPanel).
 ## Side-by-side in landscape, stacked in portrait (phones / folded Fold). Input comes from
 ## touch/mouse buttons or InputMap actions only (roll_dice, buy_property, end_turn).
 
@@ -17,6 +18,9 @@ var _pass_button: Button
 var _end_button: Button
 var _fine_button: Button
 var _pardon_button: Button
+var _auction_panel: AuctionPanel
+var _debt_panel: DebtPanel
+var _holdings_panel: HoldingsPanel
 
 
 func _ready() -> void:
@@ -24,6 +28,8 @@ func _ready() -> void:
 	_build_ui()
 	_controller.state_changed.connect(_refresh)
 	_controller.status.connect(_on_status)
+	_controller.turn_started.connect(func(p: Player) -> void: _holdings_panel.set_actor(p.id))
+	_controller.debt_started.connect(_on_debt_started)
 	resized.connect(_update_orientation)
 	_update_orientation()
 	if not _controller.log_lines.is_empty():
@@ -92,6 +98,17 @@ func _build_ui() -> void:
 	_fine_button = _make_button(v, "Pay Brig Fine", func() -> void: _controller.pay_jail_fine())
 	_pardon_button = _make_button(v, "Use Pardon Card", func() -> void: _controller.use_get_out_of_jail_card())
 
+	_auction_panel = AuctionPanel.new()
+	_auction_panel.setup(_controller)
+	v.add_child(_auction_panel)
+	_debt_panel = DebtPanel.new()
+	_debt_panel.setup(_controller)
+	v.add_child(_debt_panel)
+	v.add_child(HSeparator.new())
+	_holdings_panel = HoldingsPanel.new()
+	_holdings_panel.setup(_controller)
+	v.add_child(_holdings_panel)
+
 
 func _make_label(parent: Control, font_size: int) -> Label:
 	var l := Label.new()
@@ -115,6 +132,11 @@ func _update_orientation() -> void:
 		_box.vertical = size.y > size.x
 
 
+## The debtor (maybe not the current player) becomes the Holdings actor so they can raise funds.
+func _on_debt_started(debtor: Player, _creditor_id: int, _amount: int) -> void:
+	_holdings_panel.set_actor(debtor.id)
+
+
 func _on_status(message: String) -> void:
 	_status_label.text = message
 
@@ -124,8 +146,13 @@ func _refresh() -> void:
 	var p := tc.current_player()
 	var phase := tc.phase
 	_turn_label.text = "%s's turn%s" % [p.display_name, " (in the Brig)" if p.in_jail else ""]
+	if phase == TurnController.Phase.GAME_OVER:
+		_turn_label.text = "Game over"
 	for i in tc.players.size():
 		var pl := tc.players[i]
+		if pl.is_bankrupt:
+			_cash_labels[i].text = "%s: bankrupt" % pl.display_name
+			continue
 		var owned := tc.board.deeds_owned_by(pl.id).size()
 		_cash_labels[i].text = "%s: $%d  | %d holdings | %s" % [
 			pl.display_name, pl.cash, owned, tc.board.spaces[pl.position].display_name]
@@ -143,4 +170,7 @@ func _refresh() -> void:
 	_end_button.disabled = phase != TurnController.Phase.AWAITING_END_TURN
 	_fine_button.disabled = not (awaiting_roll and p.in_jail and p.cash >= tc.config.jail_fine)
 	_pardon_button.disabled = not (awaiting_roll and p.in_jail and not p.goojf_cards.is_empty())
+	_auction_panel.refresh()
+	_debt_panel.refresh()
+	_holdings_panel.refresh()
 	_board_view.queue_redraw()

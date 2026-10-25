@@ -13,6 +13,8 @@
   "auction_min_bid": 10,
   "auction_increment": 1,
   "unmortgage_interest_percent": 10,
+  "mortgage_transfer_interest_percent": 10,
+  "building_sell_percent": 50,
   "free_parking_jackpot": false,
   "min_players": 2,
   "max_players": 6,

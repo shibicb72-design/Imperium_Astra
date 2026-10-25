@@ -55,4 +55,7 @@ board stays readable.
 | Bank | Imperial Treasury |
 | Railroad rent | Jump Gate toll |
 
+The house / hotel words used in game log text come from `data/board.json` `terms`
+(`house`, `houses`, `hotel`), so a theme pack swaps them as data.
+
 Currency is shown as `$` for now (see OPEN_QUESTIONS.md Q2).

@@ -3,9 +3,14 @@ extends RefCounted
 ## Turn state machine (docs/classic_monopoly_structure.md section 3, 6). Pure logic: the UI only
 ## calls the public actions below and listens to signals.
 ##
-## P0 scope: roll/move, GO salary, buy, rent (auto-asked: the owner always asks in local play),
-## taxes, cards, jail (fine / pardon card / doubles / third-turn fine). Not yet: auctions,
-## building, mortgaging, trades, bankruptcy settlement (see docs/OPEN_QUESTIONS.md).
+## Scope: roll/move, GO salary, buy, rent (auto-asked: the owner always asks in local play),
+## taxes, cards, jail (fine / pardon card / doubles / third-turn fine), auctions, building,
+## mortgaging, debts and bankruptcy. The rules for those live in the Auction, Building, Mortgage
+## and Bankruptcy modules; this class only sequences them. Not yet: trades (OPEN_QUESTIONS.md).
+##
+## Payments go through _charge(): a payment the payer cannot cover becomes a queued Debt and the
+## game enters RAISING_FUNDS until the debtor pays or goes bankrupt. After every step _continue()
+## picks the next phase: debts first, then auctions, then the buy decision, then end of landing.
 
 signal turn_started(player: Player)
 signal turn_ended(player: Player)
@@ -13,10 +18,16 @@ signal doubles_extra_turn(player: Player)
 signal sent_to_jail(player: Player, reason: String)
 signal rent_requested(owner: Player, payer: Player, amount: int)
 signal winner_declared(player: Player)
+signal auction_started(space_index: int)
+signal auction_ended(space_index: int, winner_id: int, amount: int)
+signal debt_started(debtor: Player, creditor_id: int, amount: int)
+signal player_bankrupt(player: Player, creditor_id: int)
 signal status(message: String)
 signal state_changed
 
-enum Phase { AWAITING_ROLL, AWAITING_BUY_DECISION, AWAITING_END_TURN, GAME_OVER }
+enum Phase {
+	AWAITING_ROLL, AWAITING_BUY_DECISION, AWAITING_END_TURN, AUCTION, RAISING_FUNDS, GAME_OVER,
+}
 
 var config: RulesConfig
 var board: Board
@@ -31,8 +42,13 @@ var phase: Phase = Phase.AWAITING_ROLL
 var pending_buy_index: int = -1
 var last_card: Card = null
 var log_lines: Array[String] = []
+## Running auction, or null.
+var auction: Auction = null
+## Oldest first; only pending_debts[0] is being raised for.
+var pending_debts: Array[Bankruptcy.Debt] = []
 
 var _extra_turn_pending := false
+var _auction_queue: Array[int] = []
 
 
 func current_player() -> Player:
@@ -116,18 +132,270 @@ func buy() -> bool:
 		return false
 	_say("%s claims %s for $%d." % [p.display_name, board.spaces[pending_buy_index].display_name, deed.list_price])
 	pending_buy_index = -1
-	_post_landing()
+	_continue()
 	return true
 
 
-## Declining sends the deed to auction (official). P0 auction is a stub: the deed stays in the Bank.
+## 3.1: declining (or being unable to pay) sends the deed to auction among all active players.
 func decline() -> void:
 	if phase != Phase.AWAITING_BUY_DECISION:
 		return
-	var deed := board.deed_at(pending_buy_index)
-	bank.auction(deed)
-	_say("Auction is not in P0 yet; %s stays with the Bank." % board.spaces[pending_buy_index].display_name)
+	_auction_queue.append(pending_buy_index)
 	pending_buy_index = -1
+	_continue()
+
+
+# --- Auction (module: Auction) -------------------------------------------------------------
+
+## The current bidder raises to `amount` (at least auction.min_next_bid(), at most their cash).
+func auction_bid(amount: int) -> bool:
+	if phase != Phase.AUCTION or auction == null or auction.is_finished():
+		return false
+	var bidder := players[auction.current_bidder()]
+	if not auction.bid(bidder.id, amount, bidder.cash):
+		return false
+	_say("%s bids $%d." % [bidder.display_name, amount])
+	_after_auction_step()
+	return true
+
+
+## The current bidder drops out of the running auction.
+func auction_pass() -> bool:
+	if phase != Phase.AUCTION or auction == null or auction.is_finished():
+		return false
+	var bidder := players[auction.current_bidder()]
+	if not auction.pass_turn(bidder.id):
+		return false
+	_say("%s drops out." % bidder.display_name)
+	_after_auction_step()
+	return true
+
+
+func _start_auction(space_index: int) -> void:
+	var bidders: Array[int] = []
+	for step in range(1, players.size() + 1):
+		var other := players[(current_index + step) % players.size()]
+		if not other.is_bankrupt:
+			bidders.append(other.id)
+	auction = Auction.new(space_index, bidders, config.auction_min_bid, config.auction_increment)
+	bank.auction(board.deed_at(space_index))
+	_say("Auction: %s, bids from $%d." % [board.spaces[space_index].display_name, config.auction_min_bid])
+	auction_started.emit(space_index)
+
+
+func _after_auction_step() -> void:
+	if not auction.is_finished():
+		state_changed.emit()
+		return
+	var a := auction
+	auction = null
+	var s := board.spaces[a.space_index]
+	if a.has_winner():
+		var winner := players[a.high_bidder]
+		s.deed.owner = winner.id
+		_say("%s wins %s for $%d." % [winner.display_name, s.display_name, a.high_bid])
+		# Cash was checked at bid time; anything spent since then becomes a debt to the Bank.
+		_charge(winner, PropertyDeed.BANK, a.high_bid)
+	else:
+		_say("No bids; %s stays with the Bank." % s.display_name)
+	auction_ended.emit(a.space_index, a.high_bidder, a.high_bid)
+	_continue()
+
+
+# --- Building and mortgage (modules: Building, Mortgage); official: any time, any owner --------
+
+func can_manage(player_id: int) -> bool:
+	return (phase != Phase.GAME_OVER and player_id >= 0 and player_id < players.size()
+		and not players[player_id].is_bankrupt)
+
+
+func build(player_id: int, space_index: int) -> bool:
+	if not can_manage(player_id):
+		return false
+	var p := players[player_id]
+	var deed := board.deed_at(space_index)
+	var had_houses := deed.houses
+	var cost := Building.build(board, bank, p, deed)
+	if cost < 0:
+		return false
+	var what := board.term("hotel") if deed.has_hotel else board.term("house")
+	_say("%s builds a %s on %s for $%d." % [p.display_name, what, board.spaces[space_index].display_name, cost])
+	if had_houses == Building.MAX_HOUSES:
+		_say("%d %s return to the Bank." % [Building.MAX_HOUSES, board.term("houses")])
+	state_changed.emit()
+	return true
+
+
+func sell_building(player_id: int, space_index: int) -> bool:
+	if not can_manage(player_id):
+		return false
+	var p := players[player_id]
+	var deed := board.deed_at(space_index)
+	var what := board.term("hotel") if deed.has_hotel else board.term("house")
+	var value := Building.sell(board, bank, p, deed, config)
+	if value < 0:
+		return false
+	_say("%s sells a %s on %s for $%d." % [p.display_name, what, board.spaces[space_index].display_name, value])
+	state_changed.emit()
+	return true
+
+
+## Sells every building in the group at once (needed when the Bank lacks houses to break a hotel).
+func sell_group_buildings(player_id: int, group_id: StringName) -> bool:
+	if not can_manage(player_id):
+		return false
+	var p := players[player_id]
+	var value := Building.sell_group(board, bank, p, group_id, config)
+	if value < 0:
+		return false
+	_say("%s sells all buildings in %s for $%d." % [
+		p.display_name, board.group_info.get(group_id, {}).get("display_name", group_id), value])
+	state_changed.emit()
+	return true
+
+
+func mortgage(player_id: int, space_index: int) -> bool:
+	if not can_manage(player_id):
+		return false
+	var p := players[player_id]
+	var value := Mortgage.mortgage(board, bank, p, board.deed_at(space_index))
+	if value < 0:
+		return false
+	_say("%s mortgages %s for $%d." % [p.display_name, board.spaces[space_index].display_name, value])
+	state_changed.emit()
+	return true
+
+
+func unmortgage(player_id: int, space_index: int) -> bool:
+	if not can_manage(player_id):
+		return false
+	var p := players[player_id]
+	var cost := Mortgage.unmortgage(bank, p, board.deed_at(space_index), config)
+	if cost < 0:
+		return false
+	_say("%s lifts the mortgage on %s for $%d." % [p.display_name, board.spaces[space_index].display_name, cost])
+	state_changed.emit()
+	return true
+
+
+# --- Debts and bankruptcy (module: Bankruptcy) ------------------------------------------------
+
+func current_debt() -> Bankruptcy.Debt:
+	if pending_debts.is_empty():
+		return null
+	return pending_debts[0]
+
+
+## The debtor pays the oldest debt once they have raised enough cash.
+func pay_debt() -> bool:
+	var debt := current_debt()
+	if phase != Phase.RAISING_FUNDS or debt == null:
+		return false
+	var debtor := players[debt.debtor]
+	if debtor.cash < debt.amount:
+		return false
+	pending_debts.pop_front()
+	_pay(debtor, debt.creditor, debt.amount)
+	_say("%s pays the $%d owed to %s." % [debtor.display_name, debt.amount, _creditor_name(debt.creditor)])
+	_continue()
+	return true
+
+
+func can_declare_bankruptcy() -> bool:
+	var debt := current_debt()
+	return (phase == Phase.RAISING_FUNDS and debt != null
+		and Bankruptcy.can_declare(board, players[debt.debtor], debt.amount, config))
+
+
+## 4.4: only when even selling every building and mortgaging every deed would not cover the debt.
+func declare_bankruptcy() -> bool:
+	if not can_declare_bankruptcy():
+		return false
+	var debt := current_debt()
+	var debtor := players[debt.debtor]
+	var to_player := debt.creditor != PropertyDeed.BANK and not players[debt.creditor].is_bankrupt
+	var remaining: Array[Bankruptcy.Debt] = []
+	for d in pending_debts:
+		if d.debtor != debtor.id:
+			remaining.append(d)
+	pending_debts = remaining
+	if to_player:
+		var creditor := players[debt.creditor]
+		var interest := Bankruptcy.settle_to_player(board, bank, debtor, creditor, config)
+		_say("%s is bankrupt; everything goes to %s." % [debtor.display_name, creditor.display_name])
+		if interest > 0:
+			_say("%s pays $%d interest to keep the inherited mortgages." % [creditor.display_name, interest])
+			_charge(creditor, PropertyDeed.BANK, interest)
+	else:
+		var decks: Array[CardDeck] = [chance, community_chest]
+		_auction_queue.append_array(Bankruptcy.settle_to_bank(board, bank, debtor, decks))
+		_say("%s is bankrupt; holdings return to the Bank for auction." % debtor.display_name)
+	if debtor == current_player():
+		pending_buy_index = -1
+		_extra_turn_pending = false
+	player_bankrupt.emit(debtor, debt.creditor if to_player else PropertyDeed.BANK)
+	_check_winner()
+	if phase == Phase.GAME_OVER:
+		pending_debts.clear()
+		_auction_queue.clear()
+		auction = null
+		state_changed.emit()
+		return true
+	_continue()
+	return true
+
+
+## Payer owes `amount` to a player id or PropertyDeed.BANK. Paid at once when cash covers it and
+## nothing older is owed; otherwise queued as a Debt (raise funds or go bankrupt, section 4.4).
+func _charge(payer: Player, creditor_id: int, amount: int) -> void:
+	if amount <= 0 or payer.is_bankrupt:
+		return
+	var owes_already := false
+	for d in pending_debts:
+		if d.debtor == payer.id:
+			owes_already = true
+	if payer.cash >= amount and not owes_already:
+		_pay(payer, creditor_id, amount)
+		return
+	pending_debts.append(Bankruptcy.Debt.new(payer.id, creditor_id, amount))
+	_say("%s owes %s $%d and must raise funds." % [payer.display_name, _creditor_name(creditor_id), amount])
+	debt_started.emit(payer, creditor_id, amount)
+
+
+func _pay(payer: Player, creditor_id: int, amount: int) -> void:
+	if creditor_id == PropertyDeed.BANK or players[creditor_id].is_bankrupt:
+		bank.collect(payer, amount)
+	else:
+		payer.add_cash(-amount)
+		players[creditor_id].add_cash(amount)
+
+
+func _creditor_name(creditor_id: int) -> String:
+	return "the Bank" if creditor_id == PropertyDeed.BANK else players[creditor_id].display_name
+
+
+## Next phase after any step: open debts, then auctions, then the buy decision, then end of landing.
+func _continue() -> void:
+	if phase == Phase.GAME_OVER:
+		state_changed.emit()
+		return
+	if not pending_debts.is_empty():
+		phase = Phase.RAISING_FUNDS
+		state_changed.emit()
+		return
+	if auction == null and not _auction_queue.is_empty():
+		_start_auction(_auction_queue.pop_front())
+		if auction.is_finished():  # nobody left to bid
+			_after_auction_step()
+			return
+	if auction != null:
+		phase = Phase.AUCTION
+		state_changed.emit()
+		return
+	if pending_buy_index >= 0:
+		phase = Phase.AWAITING_BUY_DECISION
+		state_changed.emit()
+		return
 	_post_landing()
 
 
@@ -170,7 +438,7 @@ func _roll_in_jail(p: Player) -> void:
 			_say("%s stays in the Brig." % p.display_name)
 			return
 		# 6.4: third failed try: pay the fine and move with this roll.
-		bank.collect(p, config.jail_fine)
+		_charge(p, PropertyDeed.BANK, config.jail_fine)
 		_release(p)
 		_say("%s pays $%d after the third try." % [p.display_name, config.jail_fine])
 	move_by(p, dice.total())
@@ -187,8 +455,8 @@ func _resolve_space(p: Player, ctx: Dictionary) -> void:
 		Space.Type.COMMUNITY_CHEST:
 			_draw_card(p, community_chest)
 		Space.Type.INCOME_TAX, Space.Type.LUXURY_TAX:
-			bank.collect(p, s.tax_amount)
 			_say("%s pays %s: $%d." % [p.display_name, s.display_name, s.tax_amount])
+			_charge(p, PropertyDeed.BANK, s.tax_amount)
 		Space.Type.GO_TO_JAIL:
 			_send_to_jail(p, s.display_name)
 		Space.Type.FREE_PARKING:
@@ -217,9 +485,9 @@ func _resolve_property(p: Player, s: Space, ctx: Dictionary) -> void:
 		amount = Rules.rent_for(board, s.index, int(ctx.get("dice_total", 0)), config)
 		amount *= int(ctx.get("rent_multiplier", 1))
 	var owner := players[deed.owner]
-	_transfer(p, owner, amount)
-	_say("%s pays %s $%d rent." % [p.display_name, owner.display_name, amount])
+	_say("%s owes %s $%d rent." % [p.display_name, owner.display_name, amount])
 	rent_requested.emit(owner, p, amount)
+	_charge(p, owner.id, amount)
 
 
 func _draw_card(p: Player, deck: CardDeck) -> void:
@@ -255,15 +523,15 @@ func _apply_card(p: Player, card: Card) -> void:
 		&"COLLECT_BANK":
 			bank.pay(p, int(prm["amount"]))
 		&"PAY_BANK":
-			bank.collect(p, int(prm["amount"]))
+			_charge(p, PropertyDeed.BANK, int(prm["amount"]))
 		&"PAY_EACH_PLAYER":
 			for other in _other_active_players(p):
-				_transfer(p, other, int(prm["amount"]))
+				_charge(p, other.id, int(prm["amount"]))
 		&"COLLECT_FROM_EACH":
 			for other in _other_active_players(p):
-				_transfer(other, p, int(prm["amount"]))
+				_charge(other, p.id, int(prm["amount"]))
 		&"REPAIRS":
-			bank.collect(p, Rules.repairs_cost(board, p.id, int(prm["per_house"]), int(prm["per_hotel"])))
+			_charge(p, PropertyDeed.BANK, Rules.repairs_cost(board, p.id, int(prm["per_house"]), int(prm["per_hotel"])))
 		&"GO_TO_JAIL":
 			_send_to_jail(p, "card")
 		_:
@@ -286,10 +554,7 @@ func _release(p: Player) -> void:
 
 
 func _after_resolution() -> void:
-	if phase == Phase.AWAITING_BUY_DECISION or phase == Phase.GAME_OVER:
-		state_changed.emit()
-		return
-	_post_landing()
+	_continue()
 
 
 func _post_landing() -> void:
@@ -303,12 +568,6 @@ func _post_landing() -> void:
 	_extra_turn_pending = false
 	_check_winner()
 	state_changed.emit()
-
-
-func _transfer(from: Player, to: Player, amount: int) -> void:
-	from.add_cash(-amount)
-	to.add_cash(amount)
-	# TODO(P1): raise funds / bankruptcy settlement (section 4.4) when cash goes negative.
 
 
 func _other_active_players(p: Player) -> Array[Player]:

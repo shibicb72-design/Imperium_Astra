@@ -30,7 +30,6 @@ func sell_property(player: Player, deed: PropertyDeed) -> bool:
 	return true
 
 
-## TODO(P1): auction (bids from auction_min_bid, any player may bid; no bid -> deed stays in Bank).
-## P0 only signals and leaves the deed with the Bank.
+## The Banker announces an auction; the bidding itself is the Auction module, run by TurnController.
 func auction(deed: PropertyDeed) -> void:
 	auction_required.emit(deed)

@@ -9,10 +9,13 @@ var spaces: Array[Space] = []
 var color_groups: Dictionary = {}
 ## StringName group id -> {"display_name": String, "color": Color}
 var group_info: Dictionary = {}
+## Theme words for buildings ("house", "houses", "hotel") used in log text; display data only.
+var terms: Dictionary = {}
 
 
 static func from_dict(d: Dictionary) -> Board:
 	var b := Board.new()
+	b.terms = d.get("terms", {})
 	var groups: Dictionary = d.get("groups", {})
 	for gid in groups:
 		var g: Dictionary = groups[gid]
@@ -57,6 +60,10 @@ static func _space_from_dict(sd: Dictionary) -> Space:
 			deed.rent_by_houses.append(int(r))
 		s.deed = deed
 	return s
+
+
+func term(key: String) -> String:
+	return String(terms.get(key, key))
 
 
 func deed_at(index: int) -> PropertyDeed:

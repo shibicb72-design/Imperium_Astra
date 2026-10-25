@@ -63,9 +63,23 @@ func _draw() -> void:
 				HORIZONTAL_ALIGNMENT_CENTER, cell - 4, font_size, 4, TEXT_COLOR)
 		if s.deed != null and s.deed.owner != PropertyDeed.BANK:
 			var owner_color := controller.players[s.deed.owner].color
+			if s.deed.is_mortgaged:
+				owner_color = owner_color.darkened(0.6)
 			draw_rect(Rect2(r.position + Vector2(cell * 0.06, cell * 0.8), Vector2(cell * 0.88, cell * 0.12)), owner_color)
+			_draw_buildings(r, cell, s.deed)
 	_draw_tokens(br, cell)
 	_draw_center(br, cell, font)
+
+
+## Houses as small squares in the color strip; a hotel as one wide gold bar.
+func _draw_buildings(r: Rect2, cell: float, deed: PropertyDeed) -> void:
+	var pip := cell * 0.14
+	var y := r.position.y + cell * 0.03
+	if deed.has_hotel:
+		draw_rect(Rect2(Vector2(r.position.x + cell * 0.3, y), Vector2(cell * 0.4, pip)), GOLD)
+		return
+	for i in deed.houses:
+		draw_rect(Rect2(Vector2(r.position.x + cell * (0.08 + 0.22 * i), y), Vector2(pip, pip)), TEXT_COLOR)
 
 
 func _draw_tokens(br: Rect2, cell: float) -> void:

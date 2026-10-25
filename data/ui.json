@@ -1,0 +1,4 @@
+{
+  "_doc": "Presentation tunables only (no rule numbers). auction_quick_bid_steps: raise amounts shown as buttons in the auction panel; the minimum legal bid always comes from rules.json.",
+  "auction_quick_bid_steps": [1, 10, 50, 100]
+}

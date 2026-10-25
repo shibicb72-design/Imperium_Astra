@@ -15,6 +15,10 @@ var hotels_in_bank: int
 var auction_min_bid: int
 var auction_increment: int
 var unmortgage_interest_percent: int
+## 4.3 / 4.4: a new owner of a mortgaged deed pays this percent at once to keep it mortgaged.
+var mortgage_transfer_interest_percent: int
+## 3.2: houses / hotels sell back to the Bank at this percent of their cost.
+var building_sell_percent: int
 var free_parking_jackpot: bool
 var min_players: int
 var max_players: int
@@ -38,6 +42,8 @@ static func from_dict(d: Dictionary) -> RulesConfig:
 	c.auction_min_bid = int(d["auction_min_bid"])
 	c.auction_increment = int(d["auction_increment"])
 	c.unmortgage_interest_percent = int(d["unmortgage_interest_percent"])
+	c.mortgage_transfer_interest_percent = int(d["mortgage_transfer_interest_percent"])
+	c.building_sell_percent = int(d["building_sell_percent"])
 	c.free_parking_jackpot = bool(d["free_parking_jackpot"])
 	c.min_players = int(d["min_players"])
 	c.max_players = int(d["max_players"])

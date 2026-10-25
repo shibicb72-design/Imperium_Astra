@@ -108,6 +108,9 @@ func test_cannot_buy_without_cash() -> void:
 	check(not tc.buy(), "buy refused")
 	check_eq(tc.board.deed_at(3).owner, PropertyDeed.BANK, "still the Bank's")
 	tc.decline()
+	check_eq(tc.phase, P.AUCTION, "decline starts an auction")
+	check(tc.auction_pass() and tc.auction_pass(), "everyone drops out")
+	check_eq(tc.board.deed_at(3).owner, PropertyDeed.BANK, "no bids: stays with the Bank")
 	check_eq(tc.phase, P.AWAITING_END_TURN, "decline ends decision")
 	done()
 
@@ -206,6 +209,8 @@ func test_jail_doubles_release_no_extra_turn() -> void:
 	check(not p.in_jail, "released")
 	check_eq(p.position, 14, "moved with the doubles roll")
 	tc.decline()
+	tc.auction_pass()
+	tc.auction_pass()
 	check_eq(tc.phase, P.AWAITING_END_TURN, "no extra roll after leaving jail on doubles")
 	done()
 
