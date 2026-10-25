@@ -1,0 +1,23 @@
+{
+  "_doc": "Classic rule numbers from docs/classic_monopoly_structure.md (sections 2, 3, 4, 6). Theme swaps must not edit this file.",
+  "starting_cash": 1500,
+  "go_salary": 200,
+  "jail_index": 10,
+  "jail_fine": 50,
+  "max_jail_turns": 3,
+  "doubles_to_jail": 3,
+  "railroad_rent": [25, 50, 100, 200],
+  "utility_multiplier": [4, 10],
+  "houses_in_bank": 32,
+  "hotels_in_bank": 12,
+  "auction_min_bid": 10,
+  "auction_increment": 1,
+  "unmortgage_interest_percent": 10,
+  "free_parking_jackpot": false,
+  "min_players": 2,
+  "max_players": 6,
+  "local_players": [
+    {"display_name": "Commander 1", "color": "#4fc3f7", "_placeholder": true, "TODO": "P0 hotseat names/colors are placeholders; player setup screen not designed yet (docs/OPEN_QUESTIONS.md Q1)"},
+    {"display_name": "Commander 2", "color": "#ff8a65", "_placeholder": true}
+  ]
+}

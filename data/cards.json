@@ -1,0 +1,39 @@
+{
+  "_doc": "16 Mission Brief (Chance) + 16 Senate Dispatch (Community Chest) cards. Opcodes and params are the classic post-2008 US card set (COMMUNITY/SECONDARY per docs/classic_monopoly_structure.md 5.1, CARD-SEC) and must stay stable; only text is theme data. Targets are board indices.",
+  "chance": [
+    {"card_id": "ch_advance_go", "text": "Recalled to the Launch Bay. Advance to Launch Bay and collect $200.", "opcode": "ADVANCE_TO", "params": {"target": 0}},
+    {"card_id": "ch_advance_39", "text": "Summoned to court. Advance to Centauri Imperial Court.", "opcode": "ADVANCE_TO", "params": {"target": 39}},
+    {"card_id": "ch_advance_24", "text": "Escort duty. Advance to Rhea Bastion. If you pass Launch Bay, collect $200.", "opcode": "ADVANCE_TO", "params": {"target": 24}},
+    {"card_id": "ch_advance_11", "text": "Survey mission. Advance to Olympus Habitat. If you pass Launch Bay, collect $200.", "opcode": "ADVANCE_TO", "params": {"target": 11}},
+    {"card_id": "ch_advance_5", "text": "Take a trip through Porta Mercurii Jump Gate. If you pass Launch Bay, collect $200.", "opcode": "ADVANCE_TO", "params": {"target": 5}},
+    {"card_id": "ch_nearest_gate_a", "text": "Advance to the nearest Jump Gate. If owned, pay the owner twice the toll. If unclaimed, you may buy it.", "opcode": "MOVE_NEAREST", "params": {"space_type": "RAILROAD", "rent_multiplier": 2}},
+    {"card_id": "ch_nearest_gate_b", "text": "Advance to the nearest Jump Gate. If owned, pay the owner twice the toll. If unclaimed, you may buy it.", "opcode": "MOVE_NEAREST", "params": {"space_type": "RAILROAD", "rent_multiplier": 2}},
+    {"card_id": "ch_nearest_utility", "text": "Advance to the nearest power or water plant. If owned, roll the dice and pay the owner 10 times the roll. If unclaimed, you may buy it.", "opcode": "MOVE_NEAREST", "params": {"space_type": "UTILITY", "dice_multiplier": 10}},
+    {"card_id": "ch_dividend", "text": "The Imperial Treasury pays you a dividend of $50.", "opcode": "COLLECT_BANK", "params": {"amount": 50}},
+    {"card_id": "ch_goojf", "text": "Imperial Pardon. Leave the Brig free. Keep this card until needed or traded.", "opcode": "GOOJF", "params": {}},
+    {"card_id": "ch_back_3", "text": "Thruster misfire. Go back 3 spaces.", "opcode": "MOVE_RELATIVE", "params": {"steps": -3}},
+    {"card_id": "ch_go_to_jail", "text": "Report to the Brig. Go directly to the Brig. Do not pass Launch Bay, do not collect $200.", "opcode": "GO_TO_JAIL", "params": {}},
+    {"card_id": "ch_repairs", "text": "Hull maintenance on all your holdings: pay $25 per outpost module and $100 per citadel.", "opcode": "REPAIRS", "params": {"per_house": 25, "per_hotel": 100}},
+    {"card_id": "ch_speeding", "text": "Speeding in a shipping lane. Fine $15.", "opcode": "PAY_BANK", "params": {"amount": 15}},
+    {"card_id": "ch_chairman", "text": "Elected Consul of the Fleet. Pay each player $50.", "opcode": "PAY_EACH_PLAYER", "params": {"amount": 50}},
+    {"card_id": "ch_loan", "text": "Your shipyard loan matures. Collect $150.", "opcode": "COLLECT_BANK", "params": {"amount": 150}}
+  ],
+  "community_chest": [
+    {"card_id": "cc_advance_go", "text": "The Senate recalls you. Advance to Launch Bay and collect $200.", "opcode": "ADVANCE_TO", "params": {"target": 0}},
+    {"card_id": "cc_bank_error", "text": "Treasury ledger error in your favour. Collect $200.", "opcode": "COLLECT_BANK", "params": {"amount": 200}},
+    {"card_id": "cc_doctor", "text": "Medbay fees. Pay $50.", "opcode": "PAY_BANK", "params": {"amount": 50}},
+    {"card_id": "cc_stock", "text": "Sale of colony shares. Collect $50.", "opcode": "COLLECT_BANK", "params": {"amount": 50}},
+    {"card_id": "cc_goojf", "text": "Senatorial Pardon. Leave the Brig free. Keep this card until needed or traded.", "opcode": "GOOJF", "params": {}},
+    {"card_id": "cc_go_to_jail", "text": "Report to the Brig. Go directly to the Brig. Do not pass Launch Bay, do not collect $200.", "opcode": "GO_TO_JAIL", "params": {}},
+    {"card_id": "cc_holiday", "text": "Festival fund matures. Collect $100.", "opcode": "COLLECT_BANK", "params": {"amount": 100}},
+    {"card_id": "cc_tax_refund", "text": "Levy refund. Collect $20.", "opcode": "COLLECT_BANK", "params": {"amount": 20}},
+    {"card_id": "cc_birthday", "text": "It is your naming day. Collect $10 from every player.", "opcode": "COLLECT_FROM_EACH", "params": {"amount": 10}},
+    {"card_id": "cc_life_insurance", "text": "Crew insurance matures. Collect $100.", "opcode": "COLLECT_BANK", "params": {"amount": 100}},
+    {"card_id": "cc_hospital", "text": "Pay infirmary fees of $100.", "opcode": "PAY_BANK", "params": {"amount": 100}},
+    {"card_id": "cc_school", "text": "Pay academy fees of $50.", "opcode": "PAY_BANK", "params": {"amount": 50}},
+    {"card_id": "cc_consultancy", "text": "Receive a $25 navigation consultancy fee.", "opcode": "COLLECT_BANK", "params": {"amount": 25}},
+    {"card_id": "cc_street_repairs", "text": "Habitat repairs assessed: pay $40 per outpost module and $115 per citadel.", "opcode": "REPAIRS", "params": {"per_house": 40, "per_hotel": 115}},
+    {"card_id": "cc_beauty", "text": "Second prize in the Senate pageant. Collect $10.", "opcode": "COLLECT_BANK", "params": {"amount": 10}},
+    {"card_id": "cc_inherit", "text": "You inherit an ancestral estate. Collect $100.", "opcode": "COLLECT_BANK", "params": {"amount": 100}}
+  ]
+}
