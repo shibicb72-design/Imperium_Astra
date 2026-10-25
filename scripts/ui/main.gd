@@ -1,19 +1,25 @@
 class_name Main
 extends Control
-## Local hotseat match screen. BoardView plus a control column: turn header, player cash chips,
-## status line, the turn action buttons (only the ones that apply), pinned Auction / Debt
-## banners, then tabbed sections (Holdings, Trade, Log) filling the rest on an opaque panel;
-## tapping the open tab collapses them (debt and trade offers reopen theirs). Board above the column
-## in portrait (phones, folded Fold), beside it in landscape; the board takes at most a data/ui.json
-## share of the long side so controls keep room. One canvas unit is about 1 dp on mobile
-## (DisplayScale). Input comes from touch/mouse buttons or InputMap actions only (roll_dice,
-## buy_property, end_turn).
+## Local hotseat match screen, board-first (P5-FEEL Dig 5). MatchGate decides what shows, from the
+## rules state and whether the board is still moving: while a person waits to roll, while the dice
+## roll and while a piece moves, the play surface is the full board (it takes the full short side
+## of the play area) and the die-ready look in its center is the roll affordance (die_pressed).
+## Once the board settles, the floating TurnPanel shows the deciding seat's name and options (Buy /
+## Skip / Action / End Turn, or the jail set before the roll); it never resizes the board. Bot turns
+## stay chrome-free. One canvas unit is about 1 dp on mobile (DisplayScale). Input comes from
+## touch/mouse buttons or InputMap actions only (roll_dice, buy_property, end_turn), all through the
+## same gated handlers as the die and the panel.
+##
+## Dig 5a1 interim: the control column (turn header, cash chips, status line, pinned Auction / Debt
+## banners, tabbed Holdings / Trade / Log on an opaque panel) shows only while a person owes a forced
+## input (auction bid, debt, trade answer) or opened Action; the board then shares the screen with
+## it (beside it in landscape, above it in portrait, data/ui.json board_max_share_*). Dig 5a2 turns
+## those into board overlays.
 ##
 ## Motion and dialogue (P4-DEMO): TurnController.game_event feeds BoardView's animation queue
 ## (dice tumble, pawn hops, Brig jump) and the DialogueBanner over the board center (theme
 ## dialogue.json lines via DialogueLines). Banner lines are queued behind the pawn so they appear
-## when it lands. Turn buttons stay hidden while the board animates; bots wait for the board and
-## for a short banner backlog, then play on the bot timer.
+## when it lands. Bots wait for the board and for a short banner backlog, then play on the bot timer.
 
 enum Section { HOLDINGS, TRADE, LOG }
 
@@ -33,13 +39,11 @@ var _board_view: BoardView
 var _turn_label: Label
 var _player_labels: Array[Label] = []
 var _status_label: Label
-var _actions: GridContainer
-var _roll_button: Button
-var _buy_button: Button
-var _pass_button: Button
-var _end_button: Button
-var _fine_button: Button
-var _pardon_button: Button
+## Post-move / jail options floating over the screen (MatchGate panel states and game over).
+var _turn_panel: TurnPanel
+## Action view (OPEN_QUESTIONS Q24): Holdings / Trade / Log opened from the panel; Done closes it.
+var _action_open := false
+var _done_button: Button
 var _auction_panel: AuctionPanel
 var _debt_panel: DebtPanel
 var _tab_buttons: Array[Button] = []
@@ -146,6 +150,9 @@ func start(window: Window) -> void:
 		_say_later(_lines.line("doubles", {"name": p.display_name}), p.color))
 	_board_view.animate = is_inside_tree()
 	_board_view.animation_finished.connect(_refresh, CONNECT_DEFERRED)
+	_board_view.die_pressed.connect(press_die)
+	_board_view.item_rect_changed.connect(_place_turn_panel)
+	_turn_panel.slot_pressed.connect(press_slot)
 	# Deferred: a line can be pushed mid-rule-step (e.g. inside auction resolution), when the
 	# controller is between phases and bot_actor() must not be asked yet. A bound method, not a
 	# lambda: queued calls are dropped once this Main is freed (a lambda keeps a raw self, so calls
@@ -162,20 +169,86 @@ func start(window: Window) -> void:
 	UiFx.fade_in(_margin)
 
 
+## The InputMap actions go through the same gated handlers as the die and the turn panel.
 func _unhandled_input(event: InputEvent) -> void:
-	if controller == null or controller.current_player().is_bot or _board_view.is_animating():
+	if controller == null or _board_view == null:
 		return
 	if event.is_action_pressed("roll_dice"):
-		controller.roll()
+		press_die()
 	elif event.is_action_pressed("buy_property"):
-		controller.buy()
+		press_slot(&"buy")
 	elif event.is_action_pressed("end_turn"):
-		controller.end_turn()
+		press_slot(&"end_turn")
 
 
-## Board side length for the space left after margins: up to the full short side, but at most
-## the data/ui.json share of the long side.
+## The gate state now (MatchGate): rules state plus whether the board is still moving.
+func gate() -> MatchGate.State:
+	return MatchGate.of(controller, is_busy())
+
+
+## Die press or roll_dice: rolls only while the gate offers the die to a person (never while the
+## board moves, for a bot, in another phase or with the Action view open). True if it rolled.
+func press_die() -> bool:
+	if _action_open or not MatchGate.die_live(gate()):
+		return false
+	_board_view.set_die_ready(false)
+	controller.roll()
+	_refresh()
+	return true
+
+
+## Turn panel option (or buy_property / end_turn): applied only when the gate state lists `slot`
+## and it is legal now; the panel hides at once and the table decides what shows next.
+func press_slot(slot: StringName) -> bool:
+	if _action_open or not slot in MatchGate.panel_slots(gate()):
+		return false
+	if not _turn_panel.slot_shown(slot) or not _turn_panel.slot_enabled(slot):
+		return false
+	_turn_panel.visible = false
+	match slot:
+		&"buy":
+			controller.buy()
+		&"skip":
+			controller.decline()
+		&"end_turn":
+			controller.end_turn()
+		&"fine":
+			controller.pay_jail_fine()
+		&"pardon":
+			controller.use_get_out_of_jail_card()
+		&"action":
+			open_action()
+			return true
+	_refresh()  # a refused call emits no state_changed; refresh anyway
+	return true
+
+
+## Action (Q24 placeholder): Holdings / Trade / Log for the deciding seat. Dig 5a1 interim: shown in
+## the control column, which Done (close_action) hides again.
+func open_action() -> void:
+	_action_open = true
+	_holdings_panel.set_actor(controller.deciding_player())
+	show_section(Section.HOLDINGS)
+	_refresh()
+
+
+func close_action() -> void:
+	_action_open = false
+	_refresh()
+
+
+func action_open() -> bool:
+	return _action_open
+
+
+## Board side for the play area in board-first play: the full short side.
 static func board_side_for(avail: Vector2) -> float:
+	return minf(avail.x, avail.y)
+
+
+## Dig 5a1 interim, while the control column shows (forced input or Action): up to the full short
+## side, but at most the data/ui.json share of the long side, so the column keeps room.
+static func column_board_side_for(avail: Vector2) -> float:
 	if avail.y > avail.x:
 		return minf(avail.x, avail.y * UiStyle.num("board_max_share_portrait", 0.48))
 	return minf(avail.y, avail.x * UiStyle.num("board_max_share_landscape", 0.58))
@@ -223,19 +296,6 @@ func _build_ui() -> void:
 	_status_label = UiStyle.label(side, "", "small")
 	_status_label.max_lines_visible = 2
 
-	_actions = GridContainer.new()
-	_actions.columns = 2
-	_actions.add_theme_constant_override("h_separation", 6)
-	_actions.add_theme_constant_override("v_separation", 6)
-	side.add_child(_actions)
-	_roll_button = _action_button("Roll Dice", controller.roll)
-	_buy_button = _action_button(controller.board.term("buy"), func() -> void: controller.buy())
-	_pass_button = _action_button("Pass (to auction)", controller.decline)
-	_fine_button = _action_button("Pay fine", func() -> void: controller.pay_jail_fine())
-	_pardon_button = _action_button("Use " + controller.board.term("pardon"),
-		func() -> void: controller.use_get_out_of_jail_card())
-	_end_button = _action_button("End Turn", controller.end_turn)
-
 	_auction_panel = AuctionPanel.new()
 	_auction_panel.setup(controller)
 	side.add_child(_auction_panel)
@@ -246,6 +306,10 @@ func _build_ui() -> void:
 	var tabs := HBoxContainer.new()
 	tabs.add_theme_constant_override("separation", 4)
 	side.add_child(tabs)
+	# Done (closes the Action view) leads the row, so a row wider than a narrow column never pushes
+	# the only way back off screen.
+	_done_button = UiStyle.button(tabs, "Done", close_action)
+	_done_button.visible = false
 	# No ButtonGroup: tapping the open tab again collapses the sections (toggle_tab).
 	for i in SECTION_NAMES.size():
 		var b := UiStyle.button(tabs, SECTION_NAMES[i], toggle_tab.bind(i))
@@ -277,12 +341,10 @@ func _build_ui() -> void:
 	_sections.append(_wrap_scroll(holder, _log_label))
 	show_section(Section.HOLDINGS)
 
-
-func _action_button(text: String, action: Callable) -> Button:
-	var b := UiStyle.button(_actions, text, action)
-	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	b.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	return b
+	# Last child of Main: floats over the board and the column, outside every container.
+	_turn_panel = TurnPanel.new()
+	_turn_panel.setup(controller)
+	add_child(_turn_panel)
 
 
 func _wrap_scroll(parent: Control, content: Control) -> ScrollContainer:
@@ -342,27 +404,56 @@ func _apply_margins() -> void:
 	_margin.add_theme_constant_override("margin_bottom", m + int(_insets.w))
 
 
-## In portrait the board also gives way to the control column's minimum height (banners,
-## pinned trade row), so pinned buttons never fall off the bottom.
+## The play area inside the screen margin and safe-area insets (Main-local).
+func _play_rect() -> Rect2:
+	var m := UiStyle.num("screen_margin", 8.0)
+	var origin := Vector2(_insets.x + m, _insets.y + m)
+	return Rect2(origin, size - origin - Vector2(_insets.z + m, _insets.w + m))
+
+
+## Board-first: the board takes the full short side (top in portrait, left in landscape) and the
+## turn panel floats in the free band or over it. Dig 5a1 interim, while the column shows: the board
+## gives way to it (share of the long side; in portrait also the column's minimum height, so
+## pinned buttons never fall off the bottom).
 func _update_layout() -> void:
 	if _box == null:
 		return
 	_apply_margins()
 	var m := UiStyle.num("screen_margin", 8.0)
-	var avail := size - Vector2(_insets.x + _insets.z + 2.0 * m, _insets.y + _insets.w + 2.0 * m)
+	var avail := _play_rect().size
 	var portrait := avail.y > avail.x
 	_box.vertical = portrait
 	var board_side := board_side_for(avail)
-	if portrait:
-		var room := avail.y - _side.get_combined_minimum_size().y - m
-		board_side = maxf(MIN_BOARD_SIDE, minf(board_side, room))
+	if _side.visible:
+		board_side = column_board_side_for(avail)
+		if portrait:
+			var room := avail.y - _side.get_combined_minimum_size().y - m
+			board_side = maxf(MIN_BOARD_SIDE, minf(board_side, room))
 	_board_view.custom_minimum_size = Vector2(0, board_side) if portrait else Vector2(board_side, 0)
+	_place_turn_panel()
+
+
+## Floats the turn panel without moving the board (TurnPanel.rect_for: free band after the board,
+## else the board center clear of the dialogue banner).
+func _place_turn_panel() -> void:
+	if _turn_panel == null or not _turn_panel.visible:
+		return
+	var offset := _margin.position + _box.position + _board_view.position
+	var board := _board_view.board_rect()
+	var banner := _board_view.banner_rect()
+	var die := Rect2(offset + _board_view.die_hit_rect().position, _board_view.die_hit_rect().size) \
+			if _board_view.die_ready else Rect2()
+	var r := TurnPanel.rect_for(_play_rect(), Rect2(offset + board.position, board.size),
+			Rect2(offset + banner.position, banner.size), _turn_panel.height_for(1), _turn_panel.height_for(2), die)
+	_turn_panel.set_columns(2 if r.size.x >= TurnPanel.two_column_width() else 1)
+	_turn_panel.position = r.position
+	_turn_panel.size = r.size
 
 
 ## True when board + control column minimum heights fit the screen in portrait (tests: pinned
-## rows stay on screen).
+## rows stay on screen). Nothing to fit while the column is hidden.
 func side_fits() -> bool:
-	if not _box.vertical:
+	if not _box.vertical or not _side.visible:
 		return true
 	var m := UiStyle.num("screen_margin", 8.0)
 	var avail_y := size.y - _insets.y - _insets.w - 2.0 * m
@@ -415,7 +506,7 @@ func _place_banner() -> void:
 	_banner.size = r.size
 
 
-## Turn buttons wait while dice and pawns are still moving.
+## Dice or pieces still moving (MatchGate BUSY: the die and the turn panel wait).
 func is_busy() -> bool:
 	return _board_view.is_animating()
 
@@ -480,23 +571,14 @@ func _refresh() -> void:
 			_player_labels[i].text = "%s%s: bankrupt" % [pl.display_name, bot]
 		else:
 			_player_labels[i].text = "%s%s%s $%d%s" % [mark, pl.display_name, bot, pl.cash, _holdings_summary(pl)]
-	# A bot's own-turn buttons stay hidden; the bot timer plays for it.
-	var awaiting_roll := phase == TurnController.Phase.AWAITING_ROLL and not p.is_bot
-	var deciding := phase == TurnController.Phase.AWAITING_BUY_DECISION and not p.is_bot
-	_roll_button.visible = awaiting_roll
-	_roll_button.text = "Roll for doubles" if p.in_jail else "Roll Dice"
-	_buy_button.visible = deciding
-	_pass_button.visible = deciding
-	if deciding:
-		var s := tc.board.spaces[tc.pending_buy_index]
-		_buy_button.text = "%s %s $%d" % [tc.board.term("buy"), s.short_name, s.deed.list_price]
-		_buy_button.disabled = p.cash < s.deed.list_price
-	_end_button.visible = phase == TurnController.Phase.AWAITING_END_TURN and not p.is_bot
-	_fine_button.visible = awaiting_roll and p.in_jail
-	_fine_button.text = "Pay %s $%d" % [tc.board.term("jail_fine"), tc.config.jail_fine]
-	_fine_button.disabled = p.cash < tc.config.jail_fine
-	_pardon_button.visible = awaiting_roll and p.in_jail and not p.goojf_cards.is_empty()
-	_actions.visible = not is_busy() and _actions.get_children().any(func(c: Node) -> bool: return (c as Control).visible)
+	# Level-triggered gate (MatchGate): re-read here on every state change and once the board settles.
+	var state := gate()
+	if MatchGate.panel_slots(state).is_empty():
+		_action_open = false  # Action lives in the panel states only (Q24)
+	_side.visible = _action_open or MatchGate.is_forced(state)
+	_done_button.visible = _action_open
+	_board_view.set_die_ready(MatchGate.die_live(state) and not _action_open, p.color)
+	_turn_panel.refresh(state, _action_open)
 	_auction_panel.refresh()
 	_debt_panel.refresh()
 	_holdings_panel.refresh()

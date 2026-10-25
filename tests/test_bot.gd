@@ -293,8 +293,8 @@ func test_main_hides_turn_buttons_on_bot_turn() -> void:
 	tc.current_index = 1
 	main.controller = tc
 	main.start(null)  # outside the tree: the bot timer stays idle
-	check(not main._roll_button.visible, "no Roll button for the bot")
-	check(not main._actions.visible, "no turn actions for the bot")
+	check(not main._board_view.die_ready, "no die affordance for the bot")
+	check(not main._turn_panel.visible, "no turn panel for the bot")
 	check(main._player_labels[1].text.contains("(bot)"), "bot seat marked")
 	check(main._bot_timer.is_stopped(), "timer idle outside the tree")
 	main.free()

@@ -98,12 +98,16 @@ func test_no_deferred_lambda_connections_in_ui() -> void:
 	done()
 
 
+## Dig 5 (A1.5): board-first play gives the board the full short side; only the Dig 5a1 interim
+## column (forced input / Action) still keeps room for the controls.
 func test_board_side_keeps_room_for_controls() -> void:
 	check_eq(Main.board_side_for(Vector2(395, 880)), 395.0, "portrait phone: full width")
 	check_eq(Main.board_side_for(Vector2(898, 395)), 395.0, "landscape phone: full height")
-	var unfolded := Main.board_side_for(Vector2(917, 825))
-	check(unfolded < 825.0 and unfolded > 400.0, "unfolded Fold: board shares the width")
-	check(Main.board_side_for(Vector2(395, 700)) < 395.0, "short portrait: board shrinks")
+	check_eq(Main.board_side_for(Vector2(917, 825)), 825.0, "unfolded Fold: board takes the full short side")
+	check_eq(Main.board_side_for(Vector2(395, 700)), 395.0, "short portrait: board keeps the full width")
+	var unfolded := Main.column_board_side_for(Vector2(917, 825))
+	check(unfolded < 825.0 and unfolded > 400.0, "interim column: unfolded Fold board shares the width")
+	check(Main.column_board_side_for(Vector2(395, 700)) < 395.0, "interim column: short portrait board shrinks")
 	done()
 
 
@@ -195,19 +199,20 @@ func test_main_scene_smoke() -> void:
 	main.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	main.size = Vector2(411, 880)
 	main._update_layout()
-	check(main._box.vertical, "portrait stacks the board")
-	check(main._roll_button.visible, "roll offered")
-	check(not main._end_button.visible, "end turn hidden before rolling")
+	check(not main._side.visible and main._board_view.custom_minimum_size.y == 395.0, "portrait: board fills the play width")
+	check(main.gate() == MatchGate.State.AWAIT_DIE_TAP and main._board_view.die_ready, "die affordance live before rolling")
+	check(not main._turn_panel.visible, "no turn panel (no End Turn) before rolling")
 	_check_touch_sized(main, "main")
 	main.controller.dice.force(2, 3)
-	main.controller.roll()
-	check(main._buy_button.visible and main._pass_button.visible, "claim / pass offered")
-	main.controller.decline()
+	check(main.press_die(), "die press rolls")
+	check(main._turn_panel.offers(&"buy") and main._turn_panel.offers(&"skip"), "panel Buy + Skip once the board settles")
+	_check_touch_sized(main._turn_panel, "turn panel")
+	main.press_slot(&"skip")
 	check(main._auction_panel.visible, "auction banner shown")
-	check(not main._actions.visible, "no turn actions during the auction")
+	check(not main._turn_panel.visible, "no turn panel during the auction")
 	main.size = Vector2(898, 395)
 	main._update_layout()
-	check(not main._box.vertical, "landscape side by side")
+	check(not main._side.visible and main._board_view.custom_minimum_size.x == 379.0, "landscape: board fills the play height")
 	main.show_section(Main.Section.LOG)
 	check(not main._log_label.text.is_empty(), "log filled")
 	main.free()
@@ -239,7 +244,7 @@ func test_main_pinned_rows_fit_short_portrait() -> void:
 	check(not _inside_scroll(main._trade_panel._actions), "trade answers not in a scroll")
 	check(not _inside_scroll(main._auction_panel), "auction banner not in a scroll")
 	check(not _inside_scroll(main._debt_panel), "debt banner not in a scroll")
-	check(not _inside_scroll(main._actions), "turn actions not in a scroll")
+	check(not _inside_scroll(main._turn_panel), "turn panel not in a scroll")
 	main.free()
 	done()
 

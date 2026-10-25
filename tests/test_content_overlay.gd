@@ -502,7 +502,7 @@ func test_main_applies_pack_overlay_at_match_start() -> void:
 	check_eq(board.spaces[0].display_name, "T Space 0", "pack space names at match start")
 	check_eq(board.group_info[&"brown"]["display_name"], "T Group 1", "pack group names at match start")
 	check_eq(board.term("buy"), "T-buy", "pack terms at match start")
-	check(main._buy_button.text.begins_with("T-buy"), "buy button uses the pack term")
+	check(main._turn_panel.slot_text(&"buy").begins_with("T-buy"), "panel Buy uses the pack term")
 	check_eq(main.controller.players.size(), panel.count, "one player per chosen seat")
 	for i in main.controller.players.size():
 		check_eq(main.controller.players[i].display_name, seat_names[i], "match seat %d named by the pack" % (i + 1))

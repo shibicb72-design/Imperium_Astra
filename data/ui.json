@@ -1,5 +1,5 @@
 {
-  "_doc": "Presentation tunables only (no rule numbers). Sizes are canvas units, about 1 dp on phones and tablets (scripts/platform/display_scale.gd). auction_quick_bid_steps: raise amounts shown as buttons in the auction panel; the minimum legal bid always comes from rules.json. board_max_share_*: largest share of the screen's long side the board may take, so the controls keep room. trade_cash_steps: +/- buttons beside the trade cash fields. bot_step_seconds: pause between bot actions so people can follow. setup_*: seat setup screen (OPEN_QUESTIONS Q19): seat counts offered, the minimum number of people needed to start, and each seat's Human/Bot default (true = bot).",
+  "_doc": "Presentation tunables only (no rule numbers). Sizes are canvas units, about 1 dp on phones and tablets (scripts/platform/display_scale.gd). auction_quick_bid_steps: raise amounts shown as buttons in the auction panel; the minimum legal bid always comes from rules.json. board_max_share_*: largest share of the screen's long side the board may take while the Dig 5a1 interim control column shows (forced auction / debt / trade input, or Action), so the column keeps room; board-first play gives the board the full short side. trade_cash_steps: +/- buttons beside the trade cash fields. bot_step_seconds: pause between bot actions so people can follow. setup_*: seat setup screen (OPEN_QUESTIONS Q19): seat counts offered, the minimum number of people needed to start, and each seat's Human/Bot default (true = bot).",
   "theme_path": "res://data/themes/imperium_astra/theme.json",
   "theme_path_doc": "visual theme pack (colors, StyleBoxes, board chrome); see docs/THEME_MAP.md",
   "bot_step_seconds": 0.7,
@@ -46,6 +46,10 @@
   "screen_margin": 8,
   "board_max_share_portrait": 0.48,
   "board_max_share_landscape": 0.58,
+  "turn_panel_doc": "P5-FEEL Dig 5 turn panel (OPEN_QUESTIONS Q23): floats in the free band after the board, else over the board center clear of the dialogue banner; the board never resizes for it. Canvas units: width at most turn_panel_max_width and at least turn_panel_min_width; buttons sit in two columns from turn_panel_two_column_width.",
+  "turn_panel_max_width": 432,
+  "turn_panel_min_width": 192,
+  "turn_panel_two_column_width": 288,
   "trade_cash_steps": [
     10,
     100

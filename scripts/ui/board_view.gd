@@ -24,9 +24,16 @@ extends Control
 ## bodies: pieces only follow. The queue stays the single sequencer; queue_move / queue_jump drive
 ## the shown board index and no rules state lives here. fade_out_piece() is the bankrupt-fade hook
 ## (presentation-only fading set; call it on the existing `bankrupt` game_event); rules never wait.
+##
+## Die affordance (P5-FEEL Dig 5): while Main sets die_ready, the dice area shows a die-ready look
+## (blank faces ringed in the seat colour, OPEN_QUESTIONS Q27) instead of the last-roll readout, so
+## it reads as "tap to roll" even before any roll and on turn 1 after the start-order roll. A press
+## inside die_hit_rect() (at least UiStyle.touch() each way) emits die_pressed and selects no
+## space; Main applies its gate and rolls. This view still never calls the controller.
 
 signal space_selected(index: int)
 signal animation_finished
+signal die_pressed
 
 const GRID := 11
 const MIN_LABEL_FONT := 6
@@ -64,6 +71,9 @@ var controller: TurnController = null
 var selected_index: int = NO_SELECTION
 ## Play queued motion over time; off = apply at once. Main turns it on inside the live tree.
 var animate := false
+## Die-ready look and die presses on (set_die_ready); Main sets it from its gate.
+var die_ready := false
+var _die_tint := Color.WHITE
 
 ## Board index each token is drawn at (player id -> index); catches up as the queue plays.
 var _shown_pos: Dictionary = {}
@@ -132,6 +142,57 @@ func shown_position(player_id: int) -> int:
 
 func shown_dice() -> Vector2i:
 	return _shown_dice
+
+
+## Turns the die-ready look and die presses on or off; `tint` rings the faces (current seat colour).
+func set_die_ready(on: bool, tint: Color = Color.WHITE) -> void:
+	if on == die_ready and tint == _die_tint:
+		return
+	die_ready = on
+	_die_tint = tint
+	queue_redraw()
+
+
+## What the dice area draws now: &"tumble" (a roll playing), &"ready" (die-ready look), &"faces"
+## (last-roll readout) or &"none" (no roll yet).
+func dice_look() -> StringName:
+	if _rolling():
+		return &"tumble"
+	if die_ready:
+		return &"ready"
+	return &"faces" if _faces().x > 0 else &"none"
+
+
+func _rolling() -> bool:
+	return not _item.is_empty() and _item["type"] == &"dice"
+
+
+func _faces() -> Vector2i:
+	if _rolling():
+		return _tumble
+	return _shown_dice if is_animating() else Vector2i(controller.dice.d1, controller.dice.d2)
+
+
+## The two dice in the board center (local): under the title line, as drawn by _draw_center().
+func dice_rect() -> Rect2:
+	var br := _board_rect()
+	var cell := br.size.x / GRID
+	var font := UiStyle.display_font()
+	var title_size := maxi(12, int(cell * 0.45))
+	var inner := Rect2(br.position + Vector2(cell, cell) * 1.2, Vector2(cell, cell) * 8.6)
+	var face := cell * 0.85
+	var gap := cell * 0.3
+	var y := inner.position.y + font.get_ascent(title_size) + font.get_descent(title_size) + cell * 0.2
+	return Rect2(inner.get_center().x - face - gap * 0.5, y, face * 2.0 + gap, face)
+
+
+## Press area of the die-ready look: the dice, grown to at least UiStyle.touch() each way.
+func die_hit_rect() -> Rect2:
+	var r := dice_rect()
+	var t := UiStyle.touch()
+	var gx := maxf(0.0, (t - r.size.x) * 0.5)
+	var gy := maxf(0.0, (t - r.size.y) * 0.5)
+	return r.grow_individual(gx, gy, gx, gy)
 
 
 func queue_dice(d1: int, d2: int) -> void:
@@ -381,6 +442,11 @@ func _board_rect() -> Rect2:
 	return Rect2((size - Vector2(side, side)) * 0.5, Vector2(side, side))
 
 
+## The square board inside this view (local).
+func board_rect() -> Rect2:
+	return _board_rect()
+
+
 ## Area for the dialogue banner: the lower middle of the empty board center, below the dice.
 func banner_rect() -> Rect2:
 	var br := _board_rect()
@@ -405,11 +471,15 @@ func select(index: int) -> void:
 	queue_redraw()
 
 
-## Mouse buttons cover touch too (Godot emulates mouse from touch); no raw touch events.
+## Mouse buttons cover touch too (Godot emulates mouse from touch); no raw touch events. While
+## die-ready, a press on the dice is a die press, not a space selection.
 func _gui_input(event: InputEvent) -> void:
 	var mb := event as InputEventMouseButton
 	if mb != null and mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
-		select(index_at(mb.position))
+		if die_ready and die_hit_rect().has_point(mb.position):
+			die_pressed.emit()
+		else:
+			select(index_at(mb.position))
 		accept_event()
 
 
@@ -572,22 +642,22 @@ func _draw_center(br: Rect2, cell: float, font: Font) -> void:
 	y += font.get_descent(title_size)
 	draw_line(Vector2(inner.get_center().x - cell * 1.5, y), Vector2(inner.get_center().x + cell * 1.5, y),
 			UiStyle.color("accent_dim"), 1.0)
-	var rolling: bool = not _item.is_empty() and _item["type"] == &"dice"
-	var faces := _tumble if rolling else (_shown_dice if is_animating() else Vector2i(controller.dice.d1, controller.dice.d2))
-	if faces.x > 0:
-		var face := cell * 0.85
-		var gap := cell * 0.3
-		var left := inner.get_center().x - face - gap * 0.5
-		y += cell * 0.2
+	var look := dice_look()
+	var dice := dice_rect()
+	var face := dice.size.y
+	if look == &"ready":
+		y = _draw_die_ready(dice, face, font, body_size)
+	elif look != &"none":
+		var faces := _faces()
 		var j1 := Vector2.ZERO
 		var j2 := Vector2.ZERO
-		if rolling:  # tumbling: faces flicker and the dice rattle a little
+		if look == &"tumble":  # tumbling: faces flicker and the dice rattle a little
 			var shake := cell * 0.12 * (1.0 - _t / float(_item["dur"]))
 			j1 = Vector2(_rng.randf_range(-shake, shake), _rng.randf_range(-shake, shake))
 			j2 = Vector2(_rng.randf_range(-shake, shake), _rng.randf_range(-shake, shake))
-		_draw_die(Rect2(Vector2(left, y) + j1, Vector2(face, face)), faces.x)
-		_draw_die(Rect2(Vector2(left + face + gap, y) + j2, Vector2(face, face)), faces.y)
-		y += face
+		_draw_die(Rect2(dice.position + j1, Vector2(face, face)), faces.x)
+		_draw_die(Rect2(Vector2(dice.end.x - face, dice.position.y) + j2, Vector2(face, face)), faces.y)
+		y = dice.end.y
 	y += font.get_height(title_size) * 0.4
 	var lines := space_details(selected_index)
 	if lines.is_empty():
@@ -606,6 +676,21 @@ func _draw_center(br: Rect2, cell: float, font: Font) -> void:
 			break
 		draw_string(font, Vector2(inner.position.x, y), lines[i], HORIZONTAL_ALIGNMENT_CENTER,
 				inner.size.x, fs, text if i == 0 else muted)
+
+
+## Die-ready look: the press area lit in the seat colour, two blank faces ringed in it and a
+## "Tap to roll" caption; no pips, so it never reads as a roll already made. Returns the caption's
+## bottom edge.
+func _draw_die_ready(dice: Rect2, face: float, font: Font, body_size: int) -> float:
+	var hit := die_hit_rect()
+	UiStyle.flat_box(Color(_die_tint, 0.14), Color(_die_tint, 0.7), 1, int(minf(hit.size.y, hit.size.x) * 0.25), 0).draw(get_canvas_item(), hit)
+	for x: float in [dice.position.x, dice.end.x - face]:
+		UiStyle.flat_box(UiStyle.color("dice_face"), _die_tint, maxi(2, int(face * 0.1)), int(face * 0.18), 0).draw(
+				get_canvas_item(), Rect2(x, dice.position.y, face, face))
+	var top := maxf(hit.end.y, dice.end.y)
+	draw_string(font, Vector2(hit.position.x - face, top + font.get_ascent(body_size)), "Tap to roll",
+			HORIZONTAL_ALIGNMENT_CENTER, hit.size.x + face * 2.0, body_size, _die_tint.lerp(Color.WHITE, 0.3))
+	return top + font.get_height(body_size)
 
 
 ## One die face: rounded ivory square with dark pips (theme dice_face / dice_pip).
