@@ -105,6 +105,9 @@ func test_product_picker_switch_and_match() -> void:
 	check_eq(UiStyle.theme_data()["id"], "astra_alt", "picker selects product pack")
 	check_eq(panel._seat_labels[0].text, "Pilot 1", "live setup seat relabeled")
 	check_eq(panel.theme_picker.get_item_metadata(panel.theme_picker.selected), "astra_alt", "rebuilt picker retains selection")
+	check_eq(panel.theme_picker.get_theme_font("font"), UiStyle.display_font(), "picker pack names use the display font")
+	check_eq(panel.theme_picker.get_popup().get_theme_font("font"), UiStyle.display_font(), "picker popup uses the display font")
+	check(panel.theme_picker.custom_minimum_size.x >= UiStyle.touch() * 3.0, "picker keeps its touch width")
 	check(StarfieldBackground.make_stars() != stars, "live setup rebuild uses alternate starfield")
 	check_eq(main._lines.line("match_start", {"name": "P"}), "Flight roster ready. P takes the helm.", "fresh dialogue loaded")
 	var style := main.theme.get_stylebox("normal", "Button") as StyleBoxFlat

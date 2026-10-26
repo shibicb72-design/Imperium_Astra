@@ -22,6 +22,13 @@ const RULE_FIELDS: Array[String] = [
 const PATH_KEYS: Array[String] = ["dialogue_path", "content_path"]
 const CORNERS: Array[String] = ["GO", "JAIL_CORNER", "FREE_PARKING", "GO_TO_JAIL"]
 const FIXTURE_INDEX := "res://tests/fixtures/themes/index.json"
+## Colors exempt from the pack divergence check (text, alert, button text, dice and star tones may
+## match across packs); every other REQUIRED_COLORS key must differ between imperium_astra and
+## astra_alt by at least MIN_PACK_DISTANCE (P5 Q20 palette pass).
+const MAY_SHARE: Array[String] = [
+	"text", "text_muted", "alert", "button_text", "button_text_disabled", "dice_face", "dice_pip", "star",
+]
+const MIN_PACK_DISTANCE := 0.05
 
 
 func teardown() -> void:
@@ -91,6 +98,14 @@ static func _seat_count() -> int:
 	return RulesConfig.from_dict(JsonData.load_json(GameSetup.RULES_PATH)).seat_pool.size()
 
 
+## Raw seat colors from data/rules.json seat_pool, with no lightening applied.
+static func _seat_colors() -> Array[Color]:
+	var out: Array[Color] = []
+	for p in RulesConfig.from_dict(JsonData.load_json(GameSetup.RULES_PATH)).seat_pool:
+		out.append(Color.html(String(p["color"])))
+	return out
+
+
 func test_theme_loads_from_ui_json_path() -> void:
 	var path := String(UiStyle.data().get("theme_path", ""))
 	check(path.begins_with("res://data/themes/"), "ui.json theme_path points into data/themes/")
@@ -128,6 +143,7 @@ func test_style_sections_present() -> void:
 
 
 func test_text_contrast() -> void:
+	check(_seat_colors().size() >= 2, "seat pool lists seat colors")
 	for id in _pack_ids():
 		check(UiStyle.set_theme(id), "%s: set_theme" % id)
 		var text := UiStyle.color("text")
@@ -146,6 +162,39 @@ func test_text_contrast() -> void:
 				"%s: disabled text still visible" % id)
 		for c in CORNERS:
 			check(contrast(text, BoardView.corner_tint(Space.Type[c])) >= 4.5, "%s: corner %s label contrast" % [id, c])
+		# P5 Q20 guards: seat colors, titles, board-center and input text on every surface they use.
+		for seat in _seat_colors():
+			for bg in ["panel", "background_top", "background"]:
+				check(contrast(seat, UiStyle.color(bg)) >= 4.5, "%s: seat #%s on %s (AA)" % [id, seat.to_html(false), bg])
+		for bg in ["panel", "board_center", "button_hover", "background_top"]:
+			check(contrast(UiStyle.color("accent"), UiStyle.color(bg)) >= 4.5, "%s: accent on %s (AA)" % [id, bg])
+		for bg in ["board_center", "input", "background_top"]:
+			check(contrast(text, UiStyle.color(bg)) >= 7.0, "%s: body text on %s (AAA)" % [id, bg])
+		for bg in ["board_center", "background_top", "background"]:
+			check(contrast(UiStyle.color("text_muted"), UiStyle.color(bg)) >= 4.5, "%s: muted text on %s (AA)" % [id, bg])
+	done()
+
+
+func test_shipped_pack_palettes_diverge() -> void:
+	var ids := _pack_ids()
+	check("imperium_astra" in ids and "astra_alt" in ids, "both shipped packs registered")
+	var palettes := {}
+	for id: String in ["imperium_astra", "astra_alt"]:
+		check(UiStyle.set_theme(id), "%s: set_theme" % id)
+		var colors := {}
+		for k in REQUIRED_COLORS:
+			colors[k] = UiStyle.color(k)
+		palettes[id] = colors
+	var compared := 0
+	for k in REQUIRED_COLORS:
+		if k in MAY_SHARE:
+			continue
+		compared += 1
+		var a: Color = palettes["imperium_astra"][k]
+		var b: Color = palettes["astra_alt"][k]
+		var d := Vector3(a.r, a.g, a.b).distance_to(Vector3(b.r, b.g, b.b))
+		check(d >= MIN_PACK_DISTANCE, "'%s' must differ between packs: RGB distance %.3f, need >= %.2f" % [k, d, MIN_PACK_DISTANCE])
+	check_eq(compared, 16, "every non-shared color key compared")
 	done()
 
 

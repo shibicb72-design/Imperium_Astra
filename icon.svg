@@ -1,6 +1,37 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-  <rect width="128" height="128" rx="20" fill="#0b1026"/>
-  <circle cx="64" cy="64" r="38" fill="none" stroke="#d4af37" stroke-width="8"/>
-  <circle cx="64" cy="64" r="14" fill="#4fc3f7"/>
-  <circle cx="98" cy="40" r="6" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Imperium Astra launcher mark (P5 Q20): original project art, hand-authored shapes only.
+       Gold laurel, ringed planet and star on deep navy; the mark stays inside the central 61%
+       (r <= 150 of 256) so circle and squircle adaptive masks never clip it. -->
+  <rect width="512" height="512" fill="#0b1026"/>
+  <circle cx="256" cy="256" r="150" fill="#121b3d"/>
+  <g id="laurel">
+    <path d="M275.45 366.3A112 112 0 0 1 175.43 178.2" fill="none" stroke="#d4af37" stroke-width="6" stroke-linecap="round"/>
+    <g fill="#d4af37">
+      <ellipse cx="220.58" cy="372.11" rx="20" ry="7.5" transform="rotate(160 220.58 372.11)"/>
+      <ellipse cx="183" cy="353" rx="20" ry="7.5" transform="rotate(180 183 353)"/>
+      <ellipse cx="154.23" cy="322.18" rx="20" ry="7.5" transform="rotate(200 154.23 322.18)"/>
+      <ellipse cx="137.73" cy="283.38" rx="20" ry="7.5" transform="rotate(220 137.73 283.38)"/>
+      <ellipse cx="135.5" cy="241.28" rx="20" ry="7.5" transform="rotate(240 135.5 241.28)"/>
+      <ellipse cx="147.8" cy="200.95" rx="20" ry="7.5" transform="rotate(260 147.8 200.95)"/>
+      <ellipse cx="185.85" cy="167.41" rx="18" ry="7" transform="rotate(314 185.85 167.41)"/>
+    </g>
+    <g fill="#b39330">
+      <ellipse cx="208.05" cy="349.76" rx="17" ry="6.5" transform="rotate(230 208.05 349.76)"/>
+      <ellipse cx="178.88" cy="327.7" rx="17" ry="6.5" transform="rotate(250 178.88 327.7)"/>
+      <ellipse cx="159.01" cy="297" rx="17" ry="6.5" transform="rotate(270 159.01 297)"/>
+      <ellipse cx="150.83" cy="261.35" rx="17" ry="6.5" transform="rotate(290 150.83 261.35)"/>
+      <ellipse cx="155.34" cy="225.06" rx="17" ry="6.5" transform="rotate(310 155.34 225.06)"/>
+      <ellipse cx="172" cy="192.5" rx="17" ry="6.5" transform="rotate(330 172 192.5)"/>
+    </g>
+  </g>
+  <use href="#laurel" transform="matrix(-1 0 0 1 512 0)"/>
+  <circle cx="256" cy="367" r="7" fill="#d4af37"/>
+  <path d="M-80 0A80 21 0 0 1 80 0" transform="translate(256 266) rotate(-18)" fill="none" stroke="#d4af37" stroke-width="9"/>
+  <circle cx="256" cy="266" r="48" fill="#d4af37"/>
+  <path d="M282.81 226.19A48 48 0 1 1 216.19 292.81A48 48 0 0 0 282.81 226.19Z" fill="#8a7224"/>
+  <g transform="translate(256 266) rotate(-18)" fill="none">
+    <path d="M80 0A80 21 0 0 1 -80 0" stroke="#121b3d" stroke-width="19"/>
+    <path d="M80 0A80 21 0 0 1 -80 0" stroke="#d4af37" stroke-width="9"/>
+  </g>
+  <path d="M256 120Q260.5 145.5 278 150Q260.5 154.5 256 180Q251.5 154.5 234 150Q251.5 145.5 256 120Z" fill="#f4e9c8"/>
 </svg>

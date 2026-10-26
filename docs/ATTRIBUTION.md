@@ -9,7 +9,9 @@ No game-icons.net assets ship in this release.
 |---|---|---|---|
 | Orbitron variable display font (unmodified) | https://github.com/google/fonts/tree/main/ofl/orbitron | Matt McInerney, The Orbitron Project Authors | SIL OFL 1.1; bundled in assets/fonts/Orbitron-OFL.txt |
 | Explorer pieces and corner vectors | scripts/ui/space_piece.gd and board_view.gd | Imperium Astra project | Original procedural artwork; no third-party source |
+| App icon (laurel, ringed planet, star) | icon.svg | Imperium Astra project | Original hand-authored SVG (P5 Q20); no third-party source |
 
-Track B uses Orbitron for titles and board lettering, selected through each theme pack's
+Track B uses Orbitron for titles and board lettering (and, since P5 Q20, the setup picker's pack
+names), selected through each theme pack's
 display_font_path. Body text retains Godot's fallback font. Pack colors also tint the original
 procedural explorers and board symbols.

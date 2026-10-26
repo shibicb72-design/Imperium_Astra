@@ -132,11 +132,13 @@ Deliberate leftovers:
 
 - **Fold prove (dig-order 10).** Install the P5 APK on the Fold. Take screencaps of a piece hop, a
   build pop, Holdings opaque / collapsible, and the setup theme picker showing both packs with a
-  visible name / term difference.
+  visible name / term difference. Q20 polish adds: the home-screen launcher icon (adaptive mask),
+  both packs' palettes on the setup screen and the board, and a check that the `astra_alt` accent
+  `#5fe0bd` and seat 1 `#4fc3f7` read as different colours.
 - **B6 feel pass on the Fold (Codex).** Tune `pawn_*`, `dice_*`, `building_pop_*` and
   `bankrupt_fade_seconds` (Q21). Not done; the values are unchanged.
-- **Still-open product points:** Q10 claim trigger, Q1 default seat names, Q20 final palette and
-  device art review, Q2 currency.
+- **Still-open product points:** Q10 claim trigger, Q1 default seat names, Q20 device art review
+  (the palette pass landed in the Q20 polish dig), Q7 icon sign-off, Q2 currency.
 
 ## Export
 

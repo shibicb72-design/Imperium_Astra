@@ -134,6 +134,9 @@ func _build_ui() -> void:
 	else:
 		box.add_child(theme_picker)
 		theme_picker.clear()
+	# Pack names use the active pack's display face, set again on every rebuild (the picker survives).
+	theme_picker.add_theme_font_override("font", UiStyle.display_font())
+	theme_picker.get_popup().add_theme_font_override("font", UiStyle.display_font())
 	for pack in UiStyle.theme_packs():
 		if not FileAccess.file_exists(String(pack["theme_path"])):
 			continue
