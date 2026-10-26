@@ -134,7 +134,10 @@ Deliberate leftovers:
   build pop, Holdings opaque / collapsible, and the setup theme picker showing both packs with a
   visible name / term difference. Q20 polish adds: the home-screen launcher icon (adaptive mask),
   both packs' palettes on the setup screen and the board, and a check that the `astra_alt` accent
-  `#5fe0bd` and seat 1 `#4fc3f7` read as different colours.
+  `#5fe0bd` and seat 1 `#4fc3f7` read as different colours. The Q21 Fold UI dig adds: Action -> Holdings
+  and -> Trade on the cover (one section at a time, pickers stacked when narrow), the compact roll
+  toast, and long card toasts that still run below the banner area. Dice faces that disagree with
+  an augur line mean a newer roll under an older line or the banner backlog (queue timing, B6).
 - **B6 feel pass on the Fold (Codex).** Tune `pawn_*`, `dice_*`, `building_pop_*` and
   `bankrupt_fade_seconds` (Q21). Not done; the values are unchanged.
 - **Still-open product points:** Q10 claim trigger, Q1 default seat names, Q20 device art review

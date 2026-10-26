@@ -461,6 +461,29 @@ static func banner_rect_in(br: Rect2) -> Rect2:
 	return Rect2(inner.position + Vector2(0, inner.size.y * 0.42), Vector2(inner.size.x, inner.size.y * 0.36))
 
 
+## The dialogue toast for `text` inside the banner reservation `reserve` (banner_rect_in, which stays
+## what overlays and the turn panel keep clear of): the text wrapped at the reservation's text width
+## (`font`, `font_size`, `line_spacing` between lines, as the banner Label draws it) plus `style`'s
+## content margins, centered in the reservation (Q21: no near-empty card over the board). Taller
+## content takes the full reservation width and grows down from its top (the text is never cut, but
+## overlays only keep clear of the reservation). Font metrics only, so it holds outside the tree too.
+static func toast_rect_in(reserve: Rect2, text: String, font: Font, font_size: int, line_spacing: float,
+		style: StyleBox) -> Rect2:
+	var margins := style.get_minimum_size()
+	if reserve.size.x <= margins.x:
+		return reserve  # not laid out yet
+	var para := TextParagraph.new()
+	para.break_flags = TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND | TextServer.BREAK_ADAPTIVE
+	para.width = reserve.size.x - margins.x
+	para.add_string(text, font, font_size)
+	var text_h := para.get_size().y + line_spacing * maxi(0, para.get_line_count() - 1)
+	# 1 px past the widest line: the Label re-wraps at the toast's width and must keep the same breaks.
+	var box := Vector2(minf(reserve.size.x, ceilf(para.get_size().x) + 1.0 + margins.x), ceilf(text_h) + margins.y)
+	if box.y > reserve.size.y:
+		return Rect2(reserve.position, Vector2(reserve.size.x, box.y))
+	return Rect2(reserve.get_center() - box * 0.5, box)
+
+
 ## Board index under a local position, or NO_SELECTION.
 func index_at(local_pos: Vector2) -> int:
 	var br := _board_rect()

@@ -5,11 +5,14 @@ extends VBoxContainer
 ## pardon cards on each side); with an open offer the receiver accepts, rejects or counters and
 ## the proposer may withdraw. Enable states and the problem line come from Trade.validate.
 ## Layout: pickers, a scrolling body, then the problem line and action row pinned at the bottom
-## so Accept / Reject / Withdraw / Back are always on screen.
+## so Accept / Reject / Withdraw / Back are always on screen. The pickers share one row, or stack
+## where Main finds the overlay too narrow for it (set_stacked). Main alone shows or hides this
+## section (Q21: a refresh never re-shows Trade beside Holdings or Log).
 
 var _controller: TurnController
 var _from_picker: OptionButton
 var _to_picker: OptionButton
+var _pickers: BoxContainer
 var _body: VBoxContainer
 var _problem: Label
 var _actions: HFlowContainer
@@ -26,11 +29,11 @@ func setup(controller: TurnController) -> void:
 	_controller = controller
 	_cash_steps = UiStyle.int_list("trade_cash_steps", [10, 100])
 	add_theme_constant_override("separation", 6)
-	var pickers := HBoxContainer.new()
-	add_child(pickers)
-	_from_picker = _make_picker(pickers)
-	UiStyle.label(pickers, "to", "body")
-	_to_picker = _make_picker(pickers)
+	_pickers = BoxContainer.new()
+	add_child(_pickers)
+	_from_picker = _make_picker(_pickers)
+	UiStyle.label(_pickers, "to", "body").horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_to_picker = _make_picker(_pickers)
 	var scroll := ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -71,6 +74,20 @@ func has_open_offer() -> bool:
 	return _controller.trade_offer != null
 
 
+## Width the pickers need side by side (Main stacks them where the overlay is narrower).
+func picker_row_width() -> float:
+	var w := float(_pickers.get_theme_constant("separation") * (_pickers.get_child_count() - 1))
+	for c in _pickers.get_children():
+		w += (c as Control).get_combined_minimum_size().x
+	return w
+
+
+## Pickers in one row, or stacked (from, "to", to) so they never crowd or clip (Fold cover).
+func set_stacked(stacked: bool) -> void:
+	if _pickers.vertical != stacked:
+		_pickers.vertical = stacked
+
+
 func refresh() -> void:
 	var tc := _controller
 	for parent: Control in [_body, _actions]:
@@ -79,8 +96,7 @@ func refresh() -> void:
 			c.queue_free()
 	_send_button = null
 	_problem.text = ""
-	visible = tc.phase != TurnController.Phase.GAME_OVER
-	if not visible:
+	if tc.phase == TurnController.Phase.GAME_OVER:  # nothing to trade; Main owns the visibility
 		return
 	for p in tc.players:
 		_from_picker.set_item_disabled(_from_picker.get_item_index(p.id), p.is_bankrupt)

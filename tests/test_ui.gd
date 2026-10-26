@@ -308,3 +308,176 @@ func test_main_sections_opaque_and_collapsible() -> void:
 	check_eq(main._holdings_panel.actor_id(), debtor.id, "debtor is the holdings actor")
 	main.free()
 	done()
+
+
+## Visible all the way up to `root` (is_visible_in_tree() needs a live tree; as test_match_gate.gd).
+func _shown(c: CanvasItem, root: Node) -> bool:
+	var n: Node = c
+	while n != null and n != root:
+		if n is CanvasItem and not (n as CanvasItem).visible:
+			return false
+		n = n.get_parent()
+	return n == root
+
+
+## Main at a phone size, outside the tree (as test_main_sections_opaque_and_collapsible).
+func _phone_main(s: Vector2) -> Main:
+	var main: Main = load("res://scenes/main.tscn").instantiate()
+	main.controller = _game()
+	main.start(null)
+	main.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	main.size = s
+	main._update_layout()
+	return main
+
+
+## Exactly `section` of Holdings / Trade / Log is open and shown; the other two are not.
+func _check_only(main: Main, section: int, what: String) -> void:
+	check(main.sections_open() and main._section == section, "%s: section %d open" % [what, section])
+	for i in main._sections.size():
+		check_eq(_shown(main._sections[i], main), i == section, "%s: section %d shown only when picked" % [what, i])
+
+
+## Q21 Fold fix (Bug 1): Main alone decides which section shows, so a refresh (any state change)
+## after a tab is picked never re-shows Trade beside Holdings or Log in the one section area.
+func test_main_sections_exclusive() -> void:
+	for s: Vector2 in [Vector2(411, 880), Vector2(360, 640)]:
+		var main := _phone_main(s)
+		main.controller.dice.force(1, 2)
+		main.press_die()
+		check(main.press_slot(&"action"), "Action opens at %s" % s)
+		main._refresh()
+		_check_only(main, Main.Section.HOLDINGS, "Action at %s" % s)
+		main.toggle_tab(Main.Section.LOG)
+		main._refresh()
+		_check_only(main, Main.Section.LOG, "Log tab at %s" % s)
+		main.toggle_tab(Main.Section.TRADE)
+		main._refresh()
+		_check_only(main, Main.Section.TRADE, "Trade tab at %s" % s)
+		main.close_action()
+		var tc := main.controller
+		var debtor := tc.players[0]
+		debtor.cash = 10
+		tc._charge(debtor, 1, 200)
+		tc._continue()
+		main._refresh()
+		check(main.gate() == MatchGate.State.DEBT, "debt for the person at %s" % s)
+		_check_only(main, Main.Section.HOLDINGS, "debt at %s" % s)
+		main.free()
+		main = _phone_main(s)
+		var offer := Trade.propose(1, 0)
+		offer.give_cash = 50
+		check(main.controller.propose_trade(offer), "offer open at %s" % s)
+		main._refresh()
+		_check_only(main, Main.Section.TRADE, "offer to a person at %s" % s)
+		main.toggle_tab(Main.Section.TRADE)
+		main._refresh()
+		_check_only(main, Main.Section.TRADE, "re-tapped offer at %s" % s)
+		main.free()
+	done()
+
+
+## Q21 Fold fix: at phone widths the open section's rows fit the overlay's content width and the
+## pickers stay touch-height boxes (outside the tree: minimum sizes; the Fold screencap is separate).
+func test_main_sections_fit_phone_width() -> void:
+	for s: Vector2 in [Vector2(411, 880), Vector2(360, 640)]:
+		var main := _phone_main(s)
+		main.controller.dice.force(1, 2)
+		main.press_die()
+		check(main.press_slot(&"action"), "Action opens at %s" % s)
+		var styles := main._overlay.get_theme_stylebox("panel").get_minimum_size() \
+				+ main._section_holder.get_theme_stylebox("panel").get_minimum_size()
+		for tab: int in [Main.Section.HOLDINGS, Main.Section.TRADE]:
+			if tab != main._section:
+				main.toggle_tab(tab)
+			main._refresh()
+			_check_only(main, tab, "fit check at %s" % s)
+			check(main.overlay_fits(), "overlay fits with section %d at %s" % [tab, s])
+			var width := main._overlay_rect().size.x - styles.x
+			var rows: Array[Control] = [main._holdings_panel.get_child(0) as Control]
+			if tab == Main.Section.TRADE:
+				rows = [main._trade_panel._from_picker.get_parent() as Control, main._trade_panel._actions]
+			for row in rows:
+				var need := row.get_combined_minimum_size().x
+				check(need <= width, "%s fits at %s (%.1f <= %.1f)" % [row.get_class(), s, need, width])
+			var tp := main._trade_panel
+			check_eq(tp._pickers.vertical, tp.picker_row_width() > width, "pickers stack only where one row does not fit at %s" % s)
+		for picker: OptionButton in [main._holdings_panel._actor_picker, main._trade_panel._from_picker,
+				main._trade_panel._to_picker]:
+			check(picker.get_combined_minimum_size().y <= UiStyle.touch() * 1.25, "picker stays one touch row at %s" % s)
+		main.free()
+	done()
+
+
+const ROLL_LINE := "The augurs read 5 and 1 for Commander 2."
+## "Mission Brief: " + the data/cards.json ch_nearest_utility text (a long card line).
+const CARD_LINE := "Mission Brief: Advance to the nearest power or water plant. If owned, roll the dice and pay the owner 10 times the roll. If unclaimed, you may buy it."
+
+
+## `text` wrapped at the banner reservation's text width, measured with the banner label's own
+## font, font size and line spacing: (widest line, total height).
+func _toast_text_size(main: Main, text: String) -> Vector2:
+	var label: Label = main._banner._label
+	var font := label.get_theme_font("font")
+	var fs := label.get_theme_font_size("font_size")
+	var margins := main._banner.get_theme_stylebox("panel").get_minimum_size()
+	var flags := TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND | TextServer.BREAK_ADAPTIVE
+	var t := font.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_CENTER,
+			main._board_view.banner_rect().size.x - margins.x, fs, -1, flags)
+	var lines := roundi(t.y / font.get_height(fs))
+	return Vector2(t.x, t.y + label.get_theme_constant("line_spacing") * maxi(0, lines - 1))
+
+
+## Main at `s`, its board view set to the board side by hand (containers do not lay out outside the
+## tree, as test_match_gate.gd does), with `text` alone on the banner.
+func _toast_main(s: Vector2, text: String) -> Main:
+	var main := _phone_main(s)
+	main._board_view.size = Vector2.ONE * Main.board_side_for(main._play_rect().size)
+	main._banner.clear()
+	main._banner.push(text)
+	main._place_banner()
+	return main
+
+
+## Q21 Fold fix (Bug 2): the roll line's banner is a compact toast sized to its wrapped text, not the
+## whole reservation; it stays centered in BoardView.banner_rect() (which overlays and the turn panel
+## keep clear of) and off the die.
+func test_banner_toast_compact() -> void:
+	for s: Vector2 in [Vector2(411, 880), Vector2(360, 640), Vector2(898, 395), Vector2(917, 825)]:
+		var main := _toast_main(s, ROLL_LINE)
+		var b := Rect2(main._banner.position, main._banner.size)
+		var reserve := main._board_view.banner_rect()
+		var t := _toast_text_size(main, ROLL_LINE) + main._banner.get_theme_stylebox("panel").get_minimum_size()
+		check(b.size.y >= t.y and b.size.y <= t.y + 2.0, "toast height fits its text at %s (%.1f vs %.1f)" % [s, b.size.y, t.y])
+		check(b.size.x >= t.x and b.size.x <= t.x + 2.0, "toast width fits its text at %s (%.1f vs %.1f)" % [s, b.size.x, t.x])
+		if s == Vector2(411, 880):
+			var side := main._board_view.size.x
+			check(b.size.y <= 0.18 * side, "toast at most 18%% of the board high (%.1f)" % b.size.y)
+			check(b.size.x * b.size.y <= 0.12 * side * side, "toast covers at most 12%% of the board (%.0f)" % (b.size.x * b.size.y))
+		check(reserve.grow(1.0).encloses(b), "toast inside the banner reservation at %s" % s)
+		check(absf(b.get_center().x - reserve.get_center().x) <= 1.0, "toast centered at %s" % s)
+		check(not b.intersects(main._board_view.die_hit_rect()), "toast clear of the die at %s" % s)
+		main.free()
+	done()
+
+
+## Q21: every shown line re-places the toast: a long card line takes the full reservation width and
+## grows down from its top (nothing clipped); the next short line shrinks it back.
+func test_banner_toast_follows_line() -> void:
+	for s: Vector2 in [Vector2(411, 880), Vector2(360, 640)]:
+		var main := _toast_main(s, ROLL_LINE)
+		var reserve := main._board_view.banner_rect()
+		var short := main._banner.size
+		main._banner.push(CARD_LINE)
+		main._banner.dismiss()
+		check_eq(main._banner.current_text(), CARD_LINE, "card line shown at %s" % s)
+		var margins := main._banner.get_theme_stylebox("panel").get_minimum_size()
+		check(absf(main._banner.size.x - reserve.size.x) <= 0.5, "card line takes the reservation width at %s" % s)
+		check(absf(main._banner.position.y - reserve.position.y) <= 0.5, "card line grows down from the reservation top at %s" % s)
+		check(main._banner.size.y >= _toast_text_size(main, CARD_LINE).y + margins.y,
+				"card line not clipped at %s (%.1f)" % [s, main._banner.size.y])
+		main._banner.push(ROLL_LINE)
+		main._banner.dismiss()
+		check(main._banner.size.is_equal_approx(short), "the roll line shrinks the toast back at %s" % s)
+		main.free()
+	done()

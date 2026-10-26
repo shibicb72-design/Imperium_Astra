@@ -16,12 +16,14 @@ extends Control
 ## It names the seat it serves (the bidder, the debtor, the offer's receiver or the acting seat),
 ## then cash chips, the status line, the pinned Auction / Debt banners and tabbed Holdings / Trade /
 ## Log; Done closes Action. Each overlay opens with the sections closed unless its purpose opens one
-## (Action and debt: Holdings; a trade offer: Trade).
+## (Action and debt: Holdings; a trade offer: Trade). Main alone shows the sections, one at a time
+## (Q21: no panel refresh re-shows another beside it).
 ##
 ## Motion and dialogue (P4-DEMO): TurnController.game_event feeds BoardView's animation queue
 ## (dice tumble, pawn hops, Brig jump) and the DialogueBanner over the board center (theme
 ## dialogue.json lines via DialogueLines). Banner lines are queued behind the pawn so they appear
-## when it lands. Bots wait for the board and for a short banner backlog, then play on the bot timer.
+## when it lands; each is a compact toast sized to its text (Q21). Bots wait for the board and for a
+## short banner backlog, then play on the bot timer.
 
 enum Section { HOLDINGS, TRADE, LOG }
 
@@ -308,6 +310,7 @@ func _build_ui() -> void:
 	_banner = DialogueBanner.new()
 	_board_view.add_child(_banner)  # floats over the board center; never changes the layout
 	_board_view.resized.connect(_place_banner)
+	_banner.line_shown.connect(_place_banner.unbind(1))  # each line re-sizes the toast
 
 	# The board overlay: a child of Main, not of _box, so showing or hiding it never reflows the
 	# board; an opaque card that takes the presses over the board area it covers.
@@ -495,10 +498,16 @@ func _overlay_rect() -> Rect2:
 			_overlay.get_combined_minimum_size(), _sections_open)
 
 
-## Floats the overlay without moving the board (overlay_rect_for).
+## Floats the overlay without moving the board (overlay_rect_for). First the trade pickers stack
+## where one row would not fit the widest overlay (the play width less its pad and the overlay and
+## section margins), so they never crowd or clip (Q21, Fold cover).
 func _place_overlay() -> void:
 	if _overlay == null or not _overlay.visible:
 		return
+	var room := _play_rect().size.x - 2.0 * UiStyle.num("screen_margin", 8.0) \
+			- _overlay.get_theme_stylebox("panel").get_minimum_size().x \
+			- _section_holder.get_theme_stylebox("panel").get_minimum_size().x
+	_trade_panel.set_stacked(_trade_panel.picker_row_width() > room)
 	var r := _overlay_rect()
 	_overlay.position = r.position
 	_overlay.size = r.size
@@ -566,11 +575,11 @@ func _say_later(text: String, color: Color = Color.TRANSPARENT) -> void:
 	_board_view.queue_call(func() -> void: _banner.push(text, color))
 
 
-## The banner sits over the lower middle of the board center (BoardView.banner_rect).
+## The banner is a compact toast for its line, centered in the lower middle of the board center
+## (BoardView.banner_rect, the reservation overlays and the turn panel keep clear of); re-placed on
+## every shown line and board resize (Q21 Fold fix: no near-empty card over a third of the board).
 func _place_banner() -> void:
-	var r := _board_view.banner_rect()
-	_banner.position = r.position
-	_banner.size = r.size
+	_banner.place_in(_board_view.banner_rect())
 
 
 ## Dice or pieces still moving (MatchGate BUSY: the die and the turn panel wait).

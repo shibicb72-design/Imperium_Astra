@@ -6,6 +6,7 @@ extends PanelContainer
 ## waiting line is dropped beyond that, so the banner never falls far behind the game. Purely
 ## visual: rules never wait on it (Main only lets bots pause while the backlog is long, and the
 ## timer always drains it). The queue logic runs through advance(), so tests drive it headless.
+## Main sizes it per shown line as a compact toast (place_in), not the whole reservation.
 
 signal line_shown(text: String)
 signal emptied
@@ -65,6 +66,26 @@ func time_left() -> float:
 func dismiss() -> void:
 	if not _current.is_empty():
 		_next()
+
+
+## Sizes and places the banner as a toast for its current line inside `reserve`
+## (BoardView.toast_rect_in). The label gets its wrap width here, as the panel would give it, so
+## the size also holds where containers never lay out (outside the tree).
+func place_in(reserve: Rect2) -> void:
+	if _current.is_empty():
+		return  # nothing on screen (or fading out): keep the last line's rect
+	var style := get_theme_stylebox("panel")
+	var r := BoardView.toast_rect_in(reserve, current_text(), _label.get_theme_font("font"),
+			_label.get_theme_font_size("font_size"), _label.get_theme_constant("line_spacing"), style)
+	var text_size := (r.size - style.get_minimum_size()).max(Vector2.ZERO)
+	# Width first, then drop the label's cached minimum (wrapped at its old width; in the tree it only
+	# refreshes on draw), so neither the label nor the panel clamps the toast to a stale height.
+	_label.size = Vector2(text_size.x, _label.size.y)
+	_label.update_minimum_size()
+	_label.position = Vector2(style.get_margin(SIDE_LEFT), style.get_margin(SIDE_TOP))
+	_label.size = text_size
+	position = r.position
+	size = r.size
 
 
 func clear() -> void:
