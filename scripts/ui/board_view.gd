@@ -199,6 +199,50 @@ func queue_dice(d1: int, d2: int) -> void:
 	_enqueue({"type": &"dice", "d1": d1, "d2": d2, "dur": UiStyle.num("dice_roll_seconds", 0.55)})
 
 
+## Presentation-only ballistic arcs, sampled by advance() and shared with drawing/tests.
+## Release compression -> large hop -> impact -> rebound -> final settle.
+func dice_pose(die: int) -> Dictionary:
+	var r := dice_rect()
+	var cell := _board_rect().size.x / GRID
+	var rest := Vector2(r.position.x + r.size.y * 0.5, r.get_center().y)
+	if die == 1:
+		rest.x = r.end.x - r.size.y * 0.5
+	var lift := 0.0
+	var stretch := Vector2.ONE
+	var offset := Vector2.ZERO
+	var angle := 0.0
+	if _rolling():
+		var t := clampf(_t / float(_item["dur"]), 0.0, 1.0)
+		var release := UiStyle.num("dice_bounce_release_fraction", 0.08)
+		var land := UiStyle.num("dice_bounce_land_fraction", 0.60)
+		var rebound := UiStyle.num("dice_bounce_rebound_fraction", 0.68)
+		var settle := UiStyle.num("dice_bounce_settle_fraction", 0.88)
+		var direction := -1.0 if die == 0 else 1.0
+		if t < release:
+			stretch = Vector2(1.0 + 0.18 * t / release, 1.0 - 0.18 * t / release)
+		elif t < land:
+			var u := (t - release) / (land - release)
+			var arc := 4.0 * u * (1.0 - u)
+			lift = cell * UiStyle.num("dice_bounce_height", 0.85) * arc
+			offset.x = direction * cell * UiStyle.num("dice_bounce_spread", 0.65) * sin(PI * u)
+			stretch = Vector2(1.0 - 0.12 * arc, 1.0 + 0.12 * arc)
+			angle = direction * TAU * u
+		elif t < rebound:
+			var impact := 1.0 - (t - land) / (rebound - land)
+			stretch = Vector2(1.0 + 0.24 * impact, 1.0 - 0.24 * impact)
+		elif t < settle:
+			var u := (t - rebound) / (settle - rebound)
+			var arc := 4.0 * u * (1.0 - u)
+			lift = cell * UiStyle.num("dice_bounce_rebound_height", 0.28) * arc
+			offset.x = direction * cell * 0.15 * sin(PI * u)
+			angle = direction * 0.25 * sin(PI * u)
+		else:
+			var impact := 1.0 - (t - settle) / (1.0 - settle)
+			stretch = Vector2(1.0 + 0.12 * impact, 1.0 - 0.12 * impact)
+	return {"point": rest + offset + Vector2(0.0, -lift), "lift": lift,
+		"scale": stretch, "rotation": angle}
+
+
 ## Hop `steps` spaces (negative: backward) from `from`. Long moves speed up to fit
 ## pawn_move_max_seconds.
 func queue_move(player_id: int, from: int, steps: int) -> void:
@@ -678,14 +722,11 @@ func _draw_center(br: Rect2, cell: float, font: Font) -> void:
 		y = _draw_die_ready(dice, face, font, body_size)
 	elif look != &"none":
 		var faces := _faces()
-		var j1 := Vector2.ZERO
-		var j2 := Vector2.ZERO
-		if look == &"tumble":  # tumbling: faces flicker and the dice rattle a little
-			var shake := cell * 0.12 * (1.0 - _t / float(_item["dur"]))
-			j1 = Vector2(_rng.randf_range(-shake, shake), _rng.randf_range(-shake, shake))
-			j2 = Vector2(_rng.randf_range(-shake, shake), _rng.randf_range(-shake, shake))
-		_draw_die(Rect2(dice.position + j1, Vector2(face, face)), faces.x)
-		_draw_die(Rect2(Vector2(dice.end.x - face, dice.position.y) + j2, Vector2(face, face)), faces.y)
+		for die in range(2):
+			var pose := dice_pose(die)
+			draw_set_transform(pose.point, pose.rotation, pose.scale)
+			_draw_die(Rect2(-Vector2.ONE * face * 0.5, Vector2.ONE * face), faces.x if die == 0 else faces.y)
+			draw_set_transform(Vector2.ZERO)
 		y = dice.end.y
 	y += font.get_height(title_size) * 0.4
 	var lines := space_details(selected_index)
