@@ -352,13 +352,21 @@ func _build_ui() -> void:
 	_overlay_title = UiStyle.label(side, "", "title")
 	_overlay_title.autowrap_mode = TextServer.AUTOWRAP_OFF
 	_overlay_title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	# Cash chips (Q23 D2): per seat its name, then its $ figure, bot tag and holdings, sized by
+	# _update_chips to at most half the chips row; a new overlay width re-fits them.
 	var chips := HFlowContainer.new()
 	side.add_child(chips)
+	chips.resized.connect(_update_chips)
 	for p in controller.players:
-		var l := UiStyle.label(chips, "", "small")
-		l.autowrap_mode = TextServer.AUTOWRAP_OFF
-		l.add_theme_color_override("font_color", p.color)
-		_player_labels.append(l)
+		var chip := HBoxContainer.new()
+		chip.add_theme_constant_override("separation", 0)  # the texts carry their own spaces
+		chips.add_child(chip)
+		for k in 2:  # the seat's name, then the rest (_player_labels)
+			var l := UiStyle.label(chip, "", "small")
+			l.autowrap_mode = TextServer.AUTOWRAP_OFF
+			l.clip_text = true  # its width comes from _update_chips, never from its text
+			l.add_theme_color_override("font_color", p.color)
+		_player_labels.append(chip.get_child(1) as Label)
 	_status_label = UiStyle.label(side, "", "small")
 	_status_label.max_lines_visible = 2
 	_status_label.visible = false  # takes room only once there is a message (_on_status)
@@ -635,8 +643,9 @@ func _on_bot_timer() -> void:
 		_schedule_bot()
 
 
-## Chip suffix: deeds held, buildings on them and pardon cards (" | 3 deeds, 2 bld"), "" when none.
-func _holdings_summary(pl: Player) -> String:
+## Chip holdings in parts: deeds held, buildings on them and pardon cards (" | 3 deeds", ", 2 bld"),
+## none when nothing is held.
+func _holdings_summary(pl: Player) -> PackedStringArray:
 	var deeds := 0
 	var buildings := 0
 	for s in controller.board.spaces:
@@ -650,7 +659,53 @@ func _holdings_summary(pl: Player) -> String:
 		parts.append("%d bld" % buildings)
 	if not pl.goojf_cards.is_empty():
 		parts.append(controller.board.term("pardon"))
-	return "" if parts.is_empty() else " | " + ", ".join(parts)
+	for k in parts.size():
+		parts[k] = (" | " if k == 0 else ", ") + parts[k]
+	return parts
+
+
+## A chip's text after the seat's name, in the parts _update_chips keeps or drops whole: the $ figure
+## (or "bankrupt") first, then the bot tag and the holdings.
+func _chip_units(pl: Player) -> PackedStringArray:
+	var units := PackedStringArray([": bankrupt" if pl.is_bankrupt else " $%d" % pl.cash])
+	if pl.is_bot:
+		units.append(" (bot)")
+	if not pl.is_bankrupt:
+		units.append_array(_holdings_summary(pl))
+	return units
+
+
+## The cash chips (Q23 D2, Shibi Oct 26 2026): each seat's name, then its $ figure (or "bankrupt"),
+## bot tag and holdings, each chip at most half the chips row so two sit side by side at phone
+## widths. The figure shows whole (half of any overlay row holds it): where a chip is too narrow the
+## holdings and the bot tag drop out whole from the end, and only then the name gives way at its
+## end (an ellipsis), so a chip's text never widens the overlay. The row is the overlay's width
+## (overlay_rect_for) less its card margins, which holds outside the tree too; in the tree a new
+## overlay width re-fits the chips. The full text stays in _player_labels (clipped where cut).
+func _update_chips() -> void:
+	var tc := controller
+	var row := _overlay_rect().size.x - _overlay.get_theme_stylebox("panel").get_minimum_size().x
+	var half := maxf(floorf((row - theme.get_constant("h_separation", "HFlowContainer")) * 0.5), 0.0)
+	for i in tc.players.size():
+		var pl := tc.players[i]
+		var rest := _player_labels[i]
+		var seat := rest.get_parent().get_child(0) as Label
+		seat.text = ("> " if pl == tc.current_player() and not pl.is_bankrupt else "") + pl.display_name
+		var units := _chip_units(pl)
+		rest.text = "".join(units)
+		var font := rest.get_theme_font("font")
+		var fs := rest.get_theme_font_size("font_size")
+		var shown := units[0]
+		for k in range(1, units.size()):
+			if font.get_string_size(seat.text + shown + units[k], HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > half:
+				break
+			shown += units[k]
+		var rest_w := minf(font.get_string_size(shown, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x, half)
+		var whole := font.get_string_size(seat.text + shown, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		# Fitting whole, the name keeps its width beside the figure; else it ends in an ellipsis.
+		seat.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS if whole > half else TextServer.OVERRUN_NO_TRIMMING
+		seat.custom_minimum_size.x = maxf(minf(whole, half) - rest_w, 0.0)
+		rest.custom_minimum_size.x = rest_w
 
 
 func _on_status(message: String) -> void:
@@ -678,14 +733,7 @@ func _refresh() -> void:
 	_overlay_title.text = "%s  $%d%s" % [who.display_name, who.cash,
 		"  (in %s)" % tc.board.term("jail") if who.in_jail else ""]
 	_overlay_title.add_theme_color_override("font_color", who.color.lerp(Color.WHITE, 0.25))
-	for i in tc.players.size():
-		var pl := tc.players[i]
-		var mark := "> " if pl == p else ""
-		var bot := " (bot)" if pl.is_bot else ""
-		if pl.is_bankrupt:
-			_player_labels[i].text = "%s%s: bankrupt" % [pl.display_name, bot]
-		else:
-			_player_labels[i].text = "%s%s%s $%d%s" % [mark, pl.display_name, bot, pl.cash, _holdings_summary(pl)]
+	_update_chips()
 	_done_button.visible = _action_open
 	_board_view.set_die_ready(MatchGate.die_live(state) and not _action_open, p.color)
 	_turn_panel.refresh(state, _action_open, _board_view.animate)

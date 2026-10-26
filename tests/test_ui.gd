@@ -673,3 +673,248 @@ func test_banner_toast_clamped_to_reserve() -> void:
 			check(cut > 0, "long card lines are cut to the reservation at %s (%d of %d)" % [s, cut, texts.size()])
 		main.free()
 	done()
+
+
+## Main at a phone size with `seats` seats (seat 1 a person, the rest bots: the setup default mix),
+## refreshed at that size so the cash chips are fitted to it (outside the tree, as _phone_main).
+func _seats_main(s: Vector2, seats: int) -> Main:
+	var main: Main = load("res://scenes/main.tscn").instantiate()
+	main.controller = GameSetup.new_game(1234, GameSetup.seats(1, seats - 1))
+	main.start(null)
+	main.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	main.size = s
+	main._update_layout()
+	main._refresh()
+	return main
+
+
+## `text`'s width in `c`'s own font and font size (the same outside the tree as in it).
+func _text_w(c: Control, text: String) -> float:
+	return c.get_theme_font("font").get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1,
+			c.get_theme_font_size("font_size")).x
+
+
+## A control's width as the tree lays it out, from its font and minimum-size settings (outside the
+## tree a Label's cached minimum uses the default font size and Main's button margins are not
+## applied): a Label that clips or trims takes its custom minimum width, else at least its text's;
+## a Button its text plus the theme's content margins (ui_style.gd), at least its custom minimum;
+## an HBox its visible children and separations.
+func _tree_w(c: Control) -> float:
+	var w := c.custom_minimum_size.x
+	if c is Label:
+		var l := c as Label
+		if not l.clip_text and l.text_overrun_behavior == TextServer.OVERRUN_NO_TRIMMING:
+			w = maxf(w, _text_w(l, l.text))
+	elif c is Button:
+		w = maxf(w, _text_w(c, (c as Button).text) + 2.0 * UiStyle.theme_num("button", "content_margin", 10))
+	elif c is HBoxContainer:
+		var sum := 0.0
+		var n := 0
+		for k: Control in c.get_children():
+			if k.visible:
+				sum += _tree_w(k)
+				n += 1
+		w = maxf(w, sum + c.get_theme_constant("separation") * maxi(n - 1, 0))
+	return w
+
+
+## Rows an HFlowContainer takes for children this wide at `width` (as FlowContainer: a child that
+## would pass the row's end starts the next row; `sep` between neighbours).
+func _flow_rows(widths: Array[float], width: float, sep: float) -> int:
+	var rows := 0
+	var x := 0.0
+	for w in widths:
+		if rows == 0 or x + sep + w > width:
+			rows += 1
+			x = w
+		else:
+			x += sep + w
+	return rows
+
+
+## Q23 compact Trade (Shibi, Oct 26 2026): the answer row (Accept / Reject / Counter, then Withdraw for
+## the proposer) packs in at most two rows at phone widths, so the open offer's overlay fits the
+## 360x640 dock. Outside the tree an HFlow has no rows, so the buttons pack by their font widths as
+## the tree packs them, at the Trade content width (overlay and section margins off, as above).
+func test_trade_answer_row_two_rows_phone() -> void:
+	# A person's answers are short (the pickers and the overlay title name them); a bot receiver's
+	# keep its name, since the title then names the acting seat; Withdraw names the proposer.
+	var tc := _game()
+	var panel := TradePanel.new()
+	panel.setup(tc)
+	var to_person := Trade.propose(1, 0)
+	to_person.give_cash = 50
+	check(tc.propose_trade(to_person), "offer to the person open")
+	panel.refresh()
+	var short: Array[String] = ["Accept", "Reject", "Counter", "Withdraw (%s)" % tc.players[1].display_name]
+	check_eq(_texts(panel._actions), short, "a person's answers are short")
+	check(tc.cancel_trade(1), "offer withdrawn")
+	var to_bot := Trade.propose(0, 1)
+	to_bot.give_cash = 50
+	check(tc.propose_trade(to_bot), "offer to the bot open")
+	panel.refresh()
+	var bot := tc.players[1].display_name
+	var named: Array[String] = ["Accept (%s)" % bot, "Reject (%s)" % bot, "Counter (%s)" % bot,
+			"Withdraw (%s)" % tc.players[0].display_name]
+	check_eq(_texts(panel._actions), named, "a bot receiver's answers keep its name")
+	panel.free()
+	for seats: int in [2, 6]:
+		for s: Vector2 in [Vector2(360, 640), Vector2(411, 731)]:
+			var tag := "%d seats at %s" % [seats, s]
+			var main := _seats_main(s, seats)
+			var offer := Trade.propose(1, 0)
+			offer.give_cash = 50
+			check(main.controller.propose_trade(offer), "offer open, %s" % tag)
+			check(main._overlay.visible and main._section == Main.Section.TRADE, "answer overlay open, %s" % tag)
+			var styles := main._overlay.get_theme_stylebox("panel").get_minimum_size().x \
+					+ main._section_holder.get_theme_stylebox("panel").get_minimum_size().x
+			var width := main._overlay_rect().size.x - styles
+			var widths: Array[float] = []
+			for b: Control in main._trade_panel._actions.get_children():
+				if b.visible:
+					widths.append(_tree_w(b))
+			check_eq(widths.size(), 4, "four answer buttons, %s" % tag)
+			var rows := _flow_rows(widths, width, main.theme.get_constant("h_separation", "HFlowContainer"))
+			check(rows <= 2, "answer row in at most two rows at %.0f wide, %s (%d rows of %s)" % [width, tag, rows, widths])
+			main.free()
+	done()
+
+
+## The overlay's cash chips at its current width, each as the tree lays it out: no chip is wider
+## than the chips row (its text never widens the overlay), they take `rows` rows, and each starts
+## with its seat's name and shows the name and its whole $ figure (the label holding the figure is
+## wide enough for it too).
+func _check_chips(main: Main, rows: int, tag: String) -> void:
+	var tc := main.controller
+	var row := main._overlay_rect().size.x - main._overlay.get_theme_stylebox("panel").get_minimum_size().x
+	var flow: Node = main._player_labels[0]
+	while not flow is HFlowContainer:
+		flow = flow.get_parent()
+	check_eq(flow.get_child_count(), tc.players.size(), "%s: one chip per seat" % tag)
+	var widths: Array[float] = []
+	for i in flow.get_child_count():
+		var chip := flow.get_child(i) as Control
+		var w := _tree_w(chip)
+		widths.append(w)
+		check(w <= row + 0.5, "%s: chip %d inside the %.0f px row (%.0f)" % [tag, i, row, w])
+		var labels: Array[Label] = []
+		if chip is Label:
+			labels.append(chip as Label)
+		for k in chip.get_children():
+			if k is Label and (k as Label).visible:
+				labels.append(k as Label)
+		var text := ""
+		for l in labels:
+			text += l.text
+		var pl := tc.players[i]
+		var cash := "$%d" % pl.cash
+		check(text.trim_prefix("> ").begins_with(pl.display_name), "%s: chip %d starts with the seat name ('%s')" % [tag, i, text])
+		var end := text.find(cash) + cash.length()
+		check(end >= cash.length(), "%s: chip %d has the $ figure ('%s')" % [tag, i, text])
+		check(_text_w(labels[0], text.left(end)) <= w + 0.5,
+				"%s: chip %d shows the name and the whole %s (%.0f <= %.0f)" % [tag, i, cash, _text_w(labels[0], text.left(end)), w])
+		for l in labels:
+			var at := l.text.find(cash)
+			if at >= 0:
+				check(_text_w(l, l.text.left(at + cash.length())) <= _tree_w(l) + 0.5,
+						"%s: chip %d's %s is not cut at its label's edge" % [tag, i, cash])
+	check_eq(_flow_rows(widths, row, main.theme.get_constant("h_separation", "HFlowContainer")), rows,
+			"%s: chips in %d rows at %.0f wide (%s)" % [tag, rows, row, widths])
+	# The chips row's own minimum width (its widest chip) is what the overlay's need sees.
+	var flow_w := (flow as Control).get_combined_minimum_size().x
+	check(flow_w <= row + 0.5, "%s: the chips row asks for no more than the %.0f px row (%.0f)" % [tag, row, flow_w])
+
+
+## Q23 D2 (Shibi, Oct 26 2026): at 360x640 the overlay's cash chips sit two per row (ceil(n / 2) rows)
+## for the setup's 3 and 4 seats and for 6, at the start and mid-game (every seat holding deeds, three
+## streets built, seat 1 a pardon card); each chip shows its seat's name and its whole $ figure and
+## never widens the overlay, and the chip text keeps the bot tag and the holdings. Outside the tree
+## the chips pack by their font widths as the tree packs them.
+func test_overlay_cash_chips_two_per_row_phone() -> void:
+	for seats: int in [3, 4, 6]:
+		var main := _seats_main(Vector2(360, 640), seats)
+		var rows := ceili(seats / 2.0)
+		_check_chips(main, rows, "%d seats" % seats)
+		var tc := main.controller
+		var k := 0
+		for i in tc.board.spaces.size():
+			var deed := tc.board.deed_at(i)
+			if deed != null:
+				deed.owner = k % seats
+				if k < 3:
+					deed.houses = 2
+				k += 1
+		tc.chance.move_to_top(&"ch_goojf")
+		tc.players[0].goojf_cards.append(tc.chance.draw())
+		main._refresh()
+		_check_chips(main, rows, "%d seats mid-game" % seats)
+		var first := main._player_labels[0].text
+		check(first.contains("deeds") and first.contains("bld") and first.contains(tc.board.term("pardon")),
+				"%d seats: the chip label keeps the holdings in its text, drawn where they fit ('%s')" % [seats, first])
+		check(main._player_labels[1].text.contains("(bot)"), "%d seats: the chip label keeps the bot tag in its text" % seats)
+		main.free()
+	# The bot tag drops out only where it does not fit: at 411x731 (half row 176) it shows.
+	var wide := _seats_main(Vector2(411, 731), 3)
+	_check_chips(wide, 2, "3 seats at 411x731")
+	for i in range(1, 3):
+		var pl := wide.controller.players[i]
+		var shown := _text_w(wide._player_labels[i], "%s $%d (bot)" % [pl.display_name, pl.cash])
+		var chip_w := _tree_w(wide._player_labels[i].get_parent() as Control)
+		check(chip_w + 0.5 >= shown, "3 seats at 411x731: chip %d shows its bot tag (%.0f >= %.0f)" % [i, chip_w, shown])
+	wide.free()
+	# The current seat past $10,000 and a bankrupt seat at 360x640: still two per row; the name gives
+	# way (an ellipsis) so the whole figure and "bankrupt" show.
+	var edge := _seats_main(Vector2(360, 640), 4)
+	edge.controller.players[0].cash = 12345
+	edge.controller.players[2].is_bankrupt = true
+	edge._refresh()
+	var row := edge._overlay_rect().size.x - edge._overlay.get_theme_stylebox("panel").get_minimum_size().x
+	var half := floorf((row - edge.theme.get_constant("h_separation", "HFlowContainer")) * 0.5)
+	var widths: Array[float] = []
+	for rest: Label in edge._player_labels:
+		widths.append(_tree_w(rest.get_parent() as Control))
+	check_eq(_flow_rows(widths, row, edge.theme.get_constant("h_separation", "HFlowContainer")), 2,
+			"$12345 and a bankrupt seat: chips in 2 rows (%s)" % [widths])
+	check(widths.all(func(w: float) -> bool: return w <= half + 0.5), "every chip at most half the row (%.0f): %s" % [half, widths])
+	var rich := edge._player_labels[0]
+	check(_tree_w(rich) + 0.5 >= _text_w(rich, " $12345"), "the current seat's whole $12345 shows")
+	check_eq((rich.get_parent().get_child(0) as Label).text_overrun_behavior, TextServer.OVERRUN_TRIM_ELLIPSIS,
+			"the current seat's name gives way with an ellipsis")
+	var out := edge._player_labels[2]
+	check(out.text.begins_with(": bankrupt") and _tree_w(out) + 0.5 >= _text_w(out, ": bankrupt"),
+			"the bankrupt seat's chip shows 'bankrupt' whole ('%s')" % out.text)
+	edge.free()
+	done()
+
+
+## Q23 D1 = (a) (Shibi, Oct 26 2026): while the trade pickers stack, "to" is hidden (one picker over the
+## other reads on its own) and the stack loses a row; "to" stays the pickers' child 1 with its text and
+## width, so picker_row_width still counts it, and in one row it shows as before. Through Main, at
+## phone and Fold sizes, it is hidden exactly while the pickers stack.
+func test_trade_pickers_stacked_hide_to() -> void:
+	var tp := TradePanel.new()
+	tp.setup(_game())
+	var to_label := tp._pickers.get_child(1) as Label
+	var one_row := tp.picker_row_width()
+	check(not tp._pickers.vertical and to_label.visible, "one row: 'to' shown")
+	tp.set_stacked(true)
+	check(tp._pickers.vertical and not to_label.visible, "stacked: 'to' hidden")
+	check(tp._pickers.get_child(1) == to_label and to_label.text == "to", "'to' stays child 1 with its text")
+	check_eq(tp.picker_row_width(), one_row, "picker_row_width still counts the hidden 'to'")
+	tp.set_stacked(false)
+	check(not tp._pickers.vertical and to_label.visible, "one row again: 'to' shown")
+	tp.free()
+	for s: Vector2 in [Vector2(360, 640), Vector2(411, 880), Vector2(875, 971)]:
+		var main := _phone_main(s)
+		main.controller.dice.force(1, 2)
+		main.press_die()
+		check(main.press_slot(&"action"), "Action opens at %s" % s)
+		main.toggle_tab(Main.Section.TRADE)
+		check(main._overlay.visible and main._section == Main.Section.TRADE, "Trade open at %s" % s)
+		var pickers := main._trade_panel._pickers
+		check_eq((pickers.get_child(1) as Label).visible, not pickers.vertical,
+				"'to' hidden exactly while the pickers stack at %s (stacked %s)" % [s, pickers.vertical])
+		if s == Vector2(360, 640):
+			check(pickers.vertical, "the pickers stack at 360x640")
+		main.free()
+	done()

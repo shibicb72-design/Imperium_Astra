@@ -6,13 +6,17 @@ extends VBoxContainer
 ## the proposer may withdraw. Enable states and the problem line come from Trade.validate.
 ## Layout: pickers, a scrolling body, then the problem line (hidden while empty) and action row
 ## pinned at the bottom so Accept / Reject / Withdraw / Back are always on screen. The pickers share
-## one row, or stack where Main finds the overlay too narrow for it (set_stacked); in the body the
-## cash steps and long deed names wrap where a row would be wider than the overlay (Q22 Fold).
+## one row, or stack where Main finds the overlay too narrow for it (set_stacked; stacked, "to" is
+## hidden, Q23 D1); in the body the cash steps and long deed names wrap where a row would be wider
+## than the overlay (Q22 Fold). A person's answer buttons keep short labels (Accept / Reject /
+## Counter, then Withdraw naming the proposer), so they take at most two rows on phones (Q23).
 ## Main alone shows or hides this section (Q21: a refresh never re-shows Trade beside Holdings or Log).
 
 var _controller: TurnController
 var _from_picker: OptionButton
 var _to_picker: OptionButton
+## "to" between the pickers in one row (child 1 of _pickers); hidden while they stack.
+var _to_label: Label
 var _pickers: BoxContainer
 var _body: VBoxContainer
 var _problem: Label
@@ -33,9 +37,9 @@ func setup(controller: TurnController) -> void:
 	_pickers = BoxContainer.new()
 	add_child(_pickers)
 	_from_picker = _make_picker(_pickers)
-	var to_label := UiStyle.label(_pickers, "to", "body")
-	to_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	to_label.autowrap_mode = TextServer.AUTOWRAP_OFF  # one word: never a 1 px column of letters (Q22)
+	_to_label = UiStyle.label(_pickers, "to", "body")
+	_to_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_to_label.autowrap_mode = TextServer.AUTOWRAP_OFF  # one word: never a 1 px column of letters (Q22)
 	_to_picker = _make_picker(_pickers)
 	var scroll := ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -85,10 +89,13 @@ func picker_row_width() -> float:
 	return w
 
 
-## Pickers in one row, or stacked (from, "to", to) so they never crowd or clip (Fold cover).
+## Pickers in one row (from "to" to), or stacked (from over to) so they never crowd or clip (Fold
+## cover). Stacked, "to" is hidden and saves a row (Q23 D1 = a, Shibi Oct 26 2026); it keeps its
+## text and width, so picker_row_width still counts it.
 func set_stacked(stacked: bool) -> void:
 	if _pickers.vertical != stacked:
 		_pickers.vertical = stacked
+	_to_label.visible = not stacked
 
 
 func refresh() -> void:
@@ -137,10 +144,13 @@ func _show_open_offer(offer: Trade.Offer) -> void:
 	if interest > 0:
 		UiStyle.label(_body, "%s also pays %s $%d mortgage interest." % [a.display_name, tc.board.term("bank"), interest])
 	_set_problem(tc.trade_problem(offer))
-	UiStyle.button(_actions, "Accept (%s)" % b.display_name, func() -> void: tc.accept_trade(b.id),
-		_problem.text.is_empty())
-	UiStyle.button(_actions, "Reject (%s)" % b.display_name, func() -> void: tc.reject_trade(b.id))
-	UiStyle.button(_actions, "Counter (%s)" % b.display_name, _start_counter)
+	# Short labels (Q23): a person's three answers share a row on phones, and the pickers and the
+	# overlay title name them. A bot receiver answers on its own and the title then names the acting
+	# seat, so its buttons keep its name. Withdraw is the proposer's, so it names them.
+	var receiver := " (%s)" % b.display_name if b.is_bot else ""
+	UiStyle.button(_actions, "Accept" + receiver, func() -> void: tc.accept_trade(b.id), _problem.text.is_empty())
+	UiStyle.button(_actions, "Reject" + receiver, func() -> void: tc.reject_trade(b.id))
+	UiStyle.button(_actions, "Counter" + receiver, _start_counter)
 	UiStyle.button(_actions, "Withdraw (%s)" % a.display_name, func() -> void: tc.cancel_trade(a.id))
 
 

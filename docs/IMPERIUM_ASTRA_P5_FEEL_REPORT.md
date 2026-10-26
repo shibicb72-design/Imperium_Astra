@@ -141,7 +141,7 @@ Deliberate leftovers:
 - **B6 feel pass on the Fold (Codex).** Tune `pawn_*`, `dice_*`, `building_pop_*` and
   `bankrupt_fade_seconds` (Q21). Not done; the values are unchanged.
 - **Still-open product points:** Q10 claim trigger, Q1 default seat names, Q20 device art review
-  (the palette pass landed in the Q20 polish dig), Q7 icon sign-off, Q2 currency.
+  (the palette pass landed in the Q20 polish dig), Q7 package id (icon art signed off Oct 26 2026), Q2 currency.
 
 ## Export
 

@@ -1,5 +1,5 @@
 extends TestCase
-## App icon (P5 Q20, Q7 candidate mark): project.godot uses res://icon.svg, and the SVG is a square,
+## App icon (P5 Q20, Q7 signed-off mark): project.godot uses res://icon.svg, and the SVG is a square,
 ## launcher-size canvas drawn only from local shapes and paths (no text, raster, script, style,
 ## entity, event handler or external reference). Godot's own SVG rasteriser (the one the importer
 ## and the Android export use) must draw both mirrored laurel branches.
