@@ -245,19 +245,122 @@ func dice_pose(die: int) -> Dictionary:
 
 ## Hop `steps` spaces (negative: backward) from `from`. Long moves speed up to fit
 ## pawn_move_max_seconds.
-func queue_move(player_id: int, from: int, steps: int) -> void:
+func queue_move(player_id: int, from: int, steps: int, show_land_card: bool = false) -> void:
 	if steps == 0:
 		return
 	var per := UiStyle.num("pawn_step_seconds", 0.14)
 	per = minf(per, UiStyle.num("pawn_move_max_seconds", 1.8) / absi(steps))
 	_enqueue({"type": &"move", "player": player_id, "from": from, "steps": steps, "per": per,
 			"dur": per * absi(steps)})
+	if show_land_card:
+		queue_land_card(posmod(from + steps, Board.SPACE_COUNT))
 
 
 ## Straight arc from `from` to `to` (sent to the Brig).
-func queue_jump(player_id: int, from: int, to: int) -> void:
+func queue_jump(player_id: int, from: int, to: int, show_land_card: bool = false) -> void:
 	_enqueue({"type": &"jump", "player": player_id, "from": from, "to": to,
 			"dur": UiStyle.num("pawn_jump_seconds", 0.6)})
+	if show_land_card:
+		queue_land_card(to)
+
+
+## One card per arrival, including card-driven moves and owned/mortgaged spaces.
+## Snapshot words and numbers now; presentation never computes or changes rule results.
+func queue_land_card(index: int) -> void:
+	if not animate or controller == null:
+		return
+	var details := space_details(index)
+	var lines := PackedStringArray([details[0]])
+	for line in details:
+		if line.begins_with("Price "):
+			lines.append(line.get_slice("  |  ", 0))
+		elif line.begins_with("Rent ") or line.begins_with("Pay $"):
+			lines.append(line)
+	_enqueue({"type": &"land_card", "index": index, "text": "\n".join(lines),
+		"dur": UiStyle.num("land_card_seconds", 2.6)})
+
+
+## Shared draw/test pose: ballistic arrival, squash, rebound, settle, hold, windup and exit.
+## Fractions are keyframe boundaries; arcs are sampled analytically, never a fade-only tween.
+func land_card_pose() -> Dictionary:
+	var active: bool = not _item.is_empty() and _item["type"] == &"land_card" and animate
+	var pose := {"active": active, "text": "", "lift": 0.0, "scale": Vector2.ONE,
+		"offset": Vector2.ZERO, "rotation": 0.0}
+	if not active:
+		return pose
+	pose.text = _item["text"]
+	var t := clampf(_t / float(_item["dur"]), 0.0, 1.0)
+	var cell := _board_rect().size.x / GRID
+	var arrival := UiStyle.num("land_card_arrive_fraction", 0.16)
+	var impact := UiStyle.num("land_card_impact_fraction", 0.20)
+	var settle := UiStyle.num("land_card_settle_fraction", 0.29)
+	var windup := UiStyle.num("land_card_windup_fraction", 0.86)
+	var exit_at := UiStyle.num("land_card_exit_fraction", 0.90)
+	if t < arrival:
+		var u := t / arrival
+		pose.lift = cell * UiStyle.num("land_card_arc_height", 0.8) * 4.0 * u * (1.0 - u)
+		var origin := _board_rect().position + (Vector2(cell_of(int(_item["index"]))) + Vector2.ONE * 0.5) * cell
+		pose.offset = (origin - land_card_rect().get_center()) * (1.0 - smoothstep(0.0, 1.0, u))
+		pose.scale = Vector2.ONE * lerpf(0.35, 1.0, u)
+		pose.rotation = -0.18 * sin(PI * u)
+	elif t < impact:
+		var squash := 1.0 - (t - arrival) / (impact - arrival)
+		pose.scale = Vector2(1.0 + 0.16 * squash, 1.0 - 0.18 * squash)
+	elif t < settle:
+		var u := (t - impact) / (settle - impact)
+		pose.lift = cell * 0.18 * 4.0 * u * (1.0 - u)
+		pose.rotation = 0.035 * sin(TAU * u)
+		pose.scale = Vector2(1.0 - 0.04 * sin(PI * u), 1.0 + 0.04 * sin(PI * u))
+	elif t > windup and t < exit_at:
+		var u := (t - windup) / (exit_at - windup)
+		pose.scale = Vector2(1.0 + 0.08 * u, 1.0 - 0.08 * u)
+		pose.offset = Vector2(-cell * 0.12 * u, cell * 0.08 * u)
+	elif t >= exit_at:
+		var u := (t - exit_at) / (1.0 - exit_at)
+		pose.offset = Vector2(cell * 9.0 * u * u, -cell * 1.5 * sin(PI * u))
+		pose.rotation = 0.4 * u
+		pose.scale = Vector2.ONE * (1.0 - 0.3 * u)
+	return pose
+
+
+## Between dice and the unchanged banner reservation. TODO Q21 device tune; toast overflow
+## remains the existing _placeholder. No new nodes, timers or input surfaces to clean up.
+func land_card_rect() -> Rect2:
+	var br := _board_rect()
+	var cell := br.size.x / GRID
+	var top := die_hit_rect().end.y + cell * 0.2
+	var bottom := banner_rect().position.y - cell * 0.15
+	return Rect2(br.position.x + cell * 1.6, top, cell * 7.8, maxf(cell, bottom - top))
+
+
+func _draw_land_card() -> void:
+	var pose := land_card_pose()
+	if not pose.active:
+		return
+	var r := land_card_rect()
+	var center: Vector2 = r.get_center() + pose.offset - Vector2(0, pose.lift)
+	draw_set_transform(center.round(), pose.rotation, pose.scale)
+	var box := Rect2(-r.size * 0.5, r.size)
+	var s := controller.board.spaces[int(_item["index"])]
+	var accent := UiStyle.color("accent")
+	if s.space_type == Space.Type.STREET:
+		accent = controller.board.group_info.get(s.color_group_id, {}).get("color", accent)
+	var chrome := UiStyle.card_style(accent)
+	chrome.set_corner_radius_all(0)
+	chrome.draw(get_canvas_item(), box)
+	# Square group stripe and stepped pixel corners, using the active pack palette.
+	draw_rect(Rect2(box.position + Vector2(6, 5), Vector2(box.size.x - 12, 4)), accent)
+	for side in [-1.0, 1.0]:
+		draw_rect(Rect2(Vector2(side * (box.size.x * 0.5 - 9) - 2, box.end.y - 9), Vector2(4, 4)), accent)
+	var lines := String(pose.text).split("\n")
+	var font := UiStyle.display_font()
+	var fs := maxi(6, mini(int(r.size.x / 32.0), int((r.size.y - 20) / (lines.size() * 1.3))))
+	var y := box.position.y + 12.0 + font.get_ascent(fs)
+	for line in lines:
+		draw_string(font, Vector2(box.position.x + 10, y), line, HORIZONTAL_ALIGNMENT_CENTER,
+			box.size.x - 20, fs, UiStyle.color("text"))
+		y += font.get_height(fs)
+	draw_set_transform(Vector2.ZERO)
 
 
 ## Runs `fn` once everything queued before it has played (at once when idle).
@@ -310,6 +413,10 @@ func _finish_item(item: Dictionary) -> void:
 
 ## Plays the queue forward by `delta` seconds; called from _process, or by tests.
 func advance(delta: float) -> void:
+	if not animate and is_animating():
+		sync_to_game()
+		animation_finished.emit()
+		return
 	while not _item.is_empty() and delta > 0.0:
 		var left := float(_item["dur"]) - _t
 		if delta < left:
@@ -613,6 +720,7 @@ func _draw() -> void:
 	_draw_building_fx(br, cell)
 	_draw_tokens(br, cell)
 	_draw_center(br, cell, font)
+	_draw_land_card()
 
 
 ## Largest font (up to a cap) at which every word of the label fits the cell width, wrapped

@@ -560,10 +560,10 @@ func _on_game_event(kind: StringName, info: Dictionary) -> void:
 		&"rolled":
 			_board_view.queue_dice(int(info["d1"]), int(info["d2"]))
 		&"moved":
-			_board_view.queue_move(pid, int(info["from"]), int(info["steps"]))
+			_board_view.queue_move(pid, int(info["from"]), int(info["steps"]), true)
 			return
 		&"jailed":
-			_board_view.queue_jump(pid, int(info["from"]), int(info["to"]))
+			_board_view.queue_jump(pid, int(info["from"]), int(info["to"]), true)
 	var color := controller.players[pid].color if pid >= 0 and pid < controller.players.size() else Color.TRANSPARENT
 	_say_later(_lines.event_line(controller, kind, info), color)
 
