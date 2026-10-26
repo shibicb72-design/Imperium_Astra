@@ -136,7 +136,7 @@ Deliberate leftovers:
   both packs' palettes on the setup screen and the board, and a check that the `astra_alt` accent
   `#5fe0bd` and seat 1 `#4fc3f7` read as different colours. The Q21 Fold UI dig adds: Action -> Holdings
   and -> Trade on the cover (one section at a time, pickers stacked when narrow), the compact roll
-  toast, and long card toasts that still run below the banner area. Dice faces that disagree with
+  toast, and long card toasts that now stop at the banner area with an ellipsis (Q22). Dice faces that disagree with
   an augur line mean a newer roll under an older line or the banner backlog (queue timing, B6).
 - **B6 feel pass on the Fold (Codex).** Tune `pawn_*`, `dice_*`, `building_pop_*` and
   `bankrupt_fade_seconds` (Q21). Not done; the values are unchanged.

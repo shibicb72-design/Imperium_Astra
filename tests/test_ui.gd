@@ -461,8 +461,9 @@ func test_banner_toast_compact() -> void:
 	done()
 
 
-## Q21: every shown line re-places the toast: a long card line takes the full reservation width and
-## grows down from its top (nothing clipped); the next short line shrinks it back.
+## Q21: every shown line re-places the toast: a long card line takes the full reservation width from
+## its top and no more (Q22 truncate-to-reserve: the lines past it are cut with an ellipsis); the
+## next short line shrinks it back.
 func test_banner_toast_follows_line() -> void:
 	for s: Vector2 in [Vector2(411, 880), Vector2(360, 640)]:
 		var main := _toast_main(s, ROLL_LINE)
@@ -474,10 +475,201 @@ func test_banner_toast_follows_line() -> void:
 		var margins := main._banner.get_theme_stylebox("panel").get_minimum_size()
 		check(absf(main._banner.size.x - reserve.size.x) <= 0.5, "card line takes the reservation width at %s" % s)
 		check(absf(main._banner.position.y - reserve.position.y) <= 0.5, "card line grows down from the reservation top at %s" % s)
-		check(main._banner.size.y >= _toast_text_size(main, CARD_LINE).y + margins.y,
-				"card line not clipped at %s (%.1f)" % [s, main._banner.size.y])
+		check(reserve.grow(1.0).encloses(Rect2(main._banner.position, main._banner.size)),
+				"card line toast inside the reservation at %s (%.1f)" % [s, main._banner.size.y])
+		var lines := _banner_lines(main._banner._label)
+		if _toast_text_size(main, CARD_LINE).y + margins.y > reserve.size.y:
+			check(lines.x < lines.y, "card line past the reservation shows %d of %d lines at %s" % [lines.x, lines.y, s])
+		check_eq(main._banner._label.text_overrun_behavior, TextServer.OVERRUN_TRIM_ELLIPSIS,
+				"card line ends in an ellipsis at %s" % s)
 		main._banner.push(ROLL_LINE)
 		main._banner.dismiss()
 		check(main._banner.size.is_equal_approx(short), "the roll line shrinks the toast back at %s" % s)
+		main.free()
+	done()
+
+
+## (lines the banner label shows, lines its text wraps to) at its placed size, by the Label's own
+## rule: a line shows while the lines so far fit its height. Font metrics, because outside the tree
+## Label.get_line_count() and get_visible_line_count() both return 1 (the build/ in-tree probe
+## reads the Label's own counts).
+func _banner_lines(label: Label) -> Vector2i:
+	var style := label.get_theme_stylebox("normal").get_minimum_size()
+	var para := TextParagraph.new()
+	para.break_flags = TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND | TextServer.BREAK_ADAPTIVE
+	para.width = label.size.x - style.x
+	para.add_string(label.text, label.get_theme_font("font"), label.get_theme_font_size("font_size"))
+	var spacing := float(label.get_theme_constant("line_spacing"))
+	var shown := 0
+	var h := 0.0
+	for i in para.get_line_count():
+		h += para.get_line_size(i).y + spacing
+		if h > label.size.y - style.y + spacing:
+			break
+		shown += 1
+	return Vector2i(shown, para.get_line_count())
+
+
+func _near(a: Rect2, b: Rect2) -> bool:
+	return absf(a.position.x - b.position.x) <= 0.5 and absf(a.position.y - b.position.y) <= 0.5 \
+			and absf(a.size.x - b.size.x) <= 0.5 and absf(a.size.y - b.size.y) <= 0.5
+
+
+## Q22 1B (Shibi, Oct 26 2026) on the pure placement, with needs from the in-tree probe (Action ->
+## Trade after the Trade fixes, the collapsed Action card, stacked-picker Trade): in portrait where
+## the free band cannot hold need.y the overlay docks at the bottom, collapsed at the play bottom
+## below the banner, open from the banner's top to the play bottom over it. Phones whose band holds
+## the card and every landscape size keep the tip placement; the board stays square (2A).
+func test_overlay_rect_docks_bottom_1b() -> void:
+	var pad := UiStyle.num("screen_margin", 8.0)
+	var trade := Vector2(395, 278)
+	var closed := Vector2(315, 148)
+	var stacked := Vector2(374, 357)
+	# size, need, fill, expected rect, docks at the bottom (1B)
+	var cases: Array[Array] = [
+		[Vector2(875, 971), trade, true, Rect2(157.5, 393.0, 560, 562.0), true],
+		[Vector2(875, 971), closed, false, Rect2(157.5, 807.0, 560, 148), true],
+		[Vector2(820, 910), trade, true, Rect2(130, 368.9, 560, 525.1), true],
+		[Vector2(820, 910), closed, false, Rect2(130, 746.0, 560, 148), true],
+		[Vector2(411, 731), stacked, true, Rect2(16, 189.4, 379, 525.6), true],
+		[Vector2(360, 640), Vector2(328, 357), true, Rect2(16, 167.0, 328, 457.0), true],
+		[Vector2(411, 880), stacked, true, Rect2(16, 411, 379, 453), false],
+		[Vector2(411, 731), closed, false, Rect2(16, 489, 379, 148), false],
+		[Vector2(898, 395), trade, true, Rect2(395, 16, 487, 363), false],
+		[Vector2(917, 825), trade, true, Rect2(178.5, 16, 560, 339.1), false],
+		[Vector2(1280, 720), trade, true, Rect2(720, 16, 544, 688), false],
+	]
+	for c: Array in cases:
+		var s: Vector2 = c[0]
+		var need: Vector2 = c[1]
+		var fill: bool = c[2]
+		var docked: bool = c[4]
+		var play := Rect2(Vector2(8, 8), s - Vector2(16, 16))
+		var board := Rect2(play.position, Vector2.ONE * Main.board_side_for(play.size))
+		var banner := BoardView.banner_rect_in(board)
+		var r := Main.overlay_rect_for(play, board, banner, need, fill)
+		var tag := "%s need %s fill %s" % [s, need, fill]
+		check(_near(r, c[3]), "%s placed at %s (got %s)" % [tag, c[3], r])
+		check(play.encloses(r) and r.size.x >= need.x and r.size.y >= need.y, "%s inside the play area at its need" % tag)
+		check_eq(Main.docks_at_bottom(play, board, need), docked, "%s docks at the bottom" % tag)
+		check_eq(r.intersects(banner), fill and docked, "%s over the banner only when docked open" % tag)
+		if docked:
+			check(absf(r.end.y - (play.end.y - pad)) <= 0.5, "%s sits on the play bottom" % tag)
+		if docked and fill:
+			check(absf(r.position.y - (banner.position.y + pad)) <= 0.5, "%s opens from the banner top" % tag)
+	done()
+
+
+## Q22 1B through Main at the unfolded Fold sizes (outside the tree: the overlay's cached minimum
+## size, not device evidence; the build/ in-tree probe is): Action's open card docks from the
+## banner's top to the play bottom and still fits (the named banner exception); collapsed it sits at
+## the play bottom clear of the banner; at 411x880 the open card stays in the free band.
+func test_main_overlay_docks_bottom_fold() -> void:
+	var pad := UiStyle.num("screen_margin", 8.0)
+	for s: Vector2 in [Vector2(875, 971), Vector2(820, 910), Vector2(411, 880)]:
+		var main := _phone_main(s)
+		main.controller.dice.force(1, 2)
+		main.press_die()
+		check(main.press_slot(&"action") and main.sections_open(), "Action opens Holdings at %s" % s)
+		main._update_layout()
+		var play := main._play_rect()
+		var board := Rect2(play.position, Vector2.ONE * Main.board_side_for(play.size))
+		var banner := BoardView.banner_rect_in(board)
+		var fold := s.x > 600.0
+		var r := Rect2(main._overlay.position, main._overlay.size)
+		check(main.overlay_fits(), "open card fits at %s" % s)
+		check_eq(r.intersects(banner), fold, "open card over the banner only when docked at %s" % s)
+		if fold:
+			check(absf(r.position.y - (banner.position.y + pad)) <= 0.5 and absf(r.end.y - (play.end.y - pad)) <= 0.5,
+					"open card from the banner top to the play bottom at %s (%s)" % [s, r])
+		main.toggle_tab(main._section)
+		main._update_layout()
+		r = Rect2(main._overlay.position, main._overlay.size)
+		check(not main.sections_open() and main.overlay_fits(), "collapsed card fits at %s" % s)
+		check(not r.intersects(banner), "collapsed card clear of the banner at %s" % s)
+		if fold:
+			check(absf(r.end.y - (play.end.y - pad)) <= 0.5, "collapsed card on the play bottom at %s (%s)" % [s, r])
+		main.free()
+	done()
+
+
+## Q22 Fold (Bug 2) in the Trade section: "to" keeps one line and its text width (picker_row_width
+## counts it), the empty problem line takes no room ("Pick two different ..." still shows), and at
+## 360x640 every freshly built body row, with the seat holding every deed mortgaged (the longest:
+## the water utility), fits the overlay's content width, so the Trade card keeps the play width.
+func test_trade_panel_rows_fit_narrow() -> void:
+	var main := _phone_main(Vector2(360, 640))
+	var tc := main.controller
+	for i in tc.board.spaces.size():
+		var deed := tc.board.deed_at(i)
+		if deed != null:
+			deed.owner = 0
+			deed.is_mortgaged = true
+	var tp := main._trade_panel
+	tp.refresh()
+	var to_label := tp._pickers.get_child(1) as Label
+	var to_w := to_label.get_theme_font("font").get_string_size("to", HORIZONTAL_ALIGNMENT_LEFT, -1,
+			to_label.get_theme_font_size("font_size")).x
+	check_eq(to_label.autowrap_mode, TextServer.AUTOWRAP_OFF, "'to' does not wrap")
+	check(to_label.get_combined_minimum_size().x + 0.5 >= to_w,
+			"'to' keeps its text width (%.1f >= %.1f)" % [to_label.get_combined_minimum_size().x, to_w])
+	check(tp.picker_row_width() + 0.5 >= tp._from_picker.get_combined_minimum_size().x
+			+ tp._to_picker.get_combined_minimum_size().x + to_w, "picker row counts the 'to' text")
+	check(not tp._problem.visible, "empty problem line takes no room")
+	tp._new_draft(0, 0)
+	check(tp._problem.visible and tp._problem.text.begins_with("Pick two different"), "same seat twice: problem shown")
+	tp._new_draft(0, 1)
+	check(not tp._problem.visible, "a fresh draft hides the problem line again")
+	var styles := main._overlay.get_theme_stylebox("panel").get_minimum_size().x \
+			+ main._section_holder.get_theme_stylebox("panel").get_minimum_size().x
+	var room := main._play_rect().size.x - 2.0 * UiStyle.num("screen_margin", 8.0)
+	var water := false
+	for row: Control in tp._body.get_children():
+		var w := row.get_combined_minimum_size().x + styles
+		var text := String(row.get("text")) if row is Button or row is Label else row.get_class()
+		check(w <= room, "'%s' fits 360x640 (%.1f <= %.1f)" % [text, w, room])
+		water = water or (text.begins_with("Aquaeductus") and text.ends_with("(mortgaged)"))
+	check(water, "the mortgaged water utility is listed")
+	check(not _inside_scroll(tp._actions), "Propose / Clear stay pinned outside the scroll")
+	main.free()
+	done()
+
+
+## Q22 Bug 3 (truncate-to-reserve): each shown line's toast, placed, lies inside the banner
+## reservation at phone, landscape and unfolded sizes, the long card line too, and every
+## data/cards.json line ("Mission Brief: " + text) at 411x880 and 360x640; a line too long for it
+## takes the whole reservation and shows fewer lines than it wraps to. The roll line keeps its Q21
+## compact caps at 411x880.
+func test_banner_toast_clamped_to_reserve() -> void:
+	var sweep: Array[String] = [ROLL_LINE, CARD_LINE]
+	var cards := JsonData.load_json("res://data/cards.json")
+	for deck: Variant in cards.values():
+		if deck is Array:
+			for card: Dictionary in deck:
+				sweep.append("Mission Brief: " + String(card["text"]))
+	for s: Vector2 in [Vector2(411, 880), Vector2(360, 640), Vector2(898, 395), Vector2(917, 825)]:
+		var main := _toast_main(s, ROLL_LINE)
+		var reserve := main._board_view.banner_rect()
+		# Trimmed, the label's minimum height is 1 px: in the tree it must fill the toast, not shrink.
+		check((main._banner._label.size_flags_vertical & Control.SIZE_FILL) != 0, "banner text fills the toast at %s" % s)
+		if s == Vector2(411, 880):
+			var side := main._board_view.size.x
+			var t := main._banner.size
+			check(t.y <= 0.18 * side and t.x * t.y <= 0.12 * side * side, "roll line keeps its compact caps (%s)" % t)
+		var texts: Array[String] = [ROLL_LINE, CARD_LINE]
+		if s.y > s.x:
+			texts = sweep
+		var cut := 0
+		for text in texts:
+			main._banner.push(text)
+			main._banner.dismiss()
+			var b := Rect2(main._banner.position, main._banner.size)
+			check(reserve.grow(1.0).encloses(b), "'%s' toast inside the reservation at %s (%s)" % [text.left(28), s, b])
+			var lines := _banner_lines(main._banner._label)
+			if lines.x < lines.y:
+				cut += 1
+				check(b.is_equal_approx(reserve), "a cut line takes the whole reservation at %s" % s)
+		if s.y > s.x:
+			check(cut > 0, "long card lines are cut to the reservation at %s (%d of %d)" % [s, cut, texts.size()])
 		main.free()
 	done()

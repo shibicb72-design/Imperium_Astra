@@ -4,10 +4,11 @@ extends VBoxContainer
 ## two active commanders can be picked. With no open offer the panel builds a draft (cash, deeds,
 ## pardon cards on each side); with an open offer the receiver accepts, rejects or counters and
 ## the proposer may withdraw. Enable states and the problem line come from Trade.validate.
-## Layout: pickers, a scrolling body, then the problem line and action row pinned at the bottom
-## so Accept / Reject / Withdraw / Back are always on screen. The pickers share one row, or stack
-## where Main finds the overlay too narrow for it (set_stacked). Main alone shows or hides this
-## section (Q21: a refresh never re-shows Trade beside Holdings or Log).
+## Layout: pickers, a scrolling body, then the problem line (hidden while empty) and action row
+## pinned at the bottom so Accept / Reject / Withdraw / Back are always on screen. The pickers share
+## one row, or stack where Main finds the overlay too narrow for it (set_stacked); in the body the
+## cash steps and long deed names wrap where a row would be wider than the overlay (Q22 Fold).
+## Main alone shows or hides this section (Q21: a refresh never re-shows Trade beside Holdings or Log).
 
 var _controller: TurnController
 var _from_picker: OptionButton
@@ -32,7 +33,9 @@ func setup(controller: TurnController) -> void:
 	_pickers = BoxContainer.new()
 	add_child(_pickers)
 	_from_picker = _make_picker(_pickers)
-	UiStyle.label(_pickers, "to", "body").horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var to_label := UiStyle.label(_pickers, "to", "body")
+	to_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	to_label.autowrap_mode = TextServer.AUTOWRAP_OFF  # one word: never a 1 px column of letters (Q22)
 	_to_picker = _make_picker(_pickers)
 	var scroll := ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -95,7 +98,7 @@ func refresh() -> void:
 			parent.remove_child(c)
 			c.queue_free()
 	_send_button = null
-	_problem.text = ""
+	_set_problem("")
 	if tc.phase == TurnController.Phase.GAME_OVER:  # nothing to trade; Main owns the visibility
 		return
 	for p in tc.players:
@@ -133,7 +136,7 @@ func _show_open_offer(offer: Trade.Offer) -> void:
 	interest = Trade.interest_due(tc.board, offer.get_deeds, tc.config)
 	if interest > 0:
 		UiStyle.label(_body, "%s also pays %s $%d mortgage interest." % [a.display_name, tc.board.term("bank"), interest])
-	_problem.text = tc.trade_problem(offer)
+	_set_problem(tc.trade_problem(offer))
 	UiStyle.button(_actions, "Accept (%s)" % b.display_name, func() -> void: tc.accept_trade(b.id),
 		_problem.text.is_empty())
 	UiStyle.button(_actions, "Reject (%s)" % b.display_name, func() -> void: tc.reject_trade(b.id))
@@ -146,7 +149,7 @@ func _show_draft() -> void:
 	var a := tc.players[_draft.from_id]
 	var b := tc.players[_draft.to_id]
 	if a.id == b.id:
-		_problem.text = "Pick two different %s." % tc.board.term("players")
+		_set_problem("Pick two different %s." % tc.board.term("players"))
 		return
 	_add_side(a, true)
 	_body.add_child(HSeparator.new())
@@ -160,11 +163,15 @@ func _show_draft() -> void:
 
 
 ## One side of the draft: cash field with +/- steps, tradable deeds and pardon cards as check boxes.
+## The row keeps the - steps, the field and the + steps in one line where it fits; narrower, the +
+## steps wrap below as a pair (Q22: the row never sets the overlay's width).
 func _add_side(p: Player, is_from: bool) -> void:
 	var tc := _controller
 	UiStyle.label(_body, "%s gives (cash $%d):" % [p.display_name, p.cash], "button")
-	var cash_row := HBoxContainer.new()
+	var cash_row := HFlowContainer.new()
 	_body.add_child(cash_row)
+	var minus := HBoxContainer.new()
+	var plus := HBoxContainer.new()
 	# Cash may have dropped since the draft was built; keep the draft in line with the field.
 	if is_from:
 		_draft.give_cash = mini(_draft.give_cash, p.cash)
@@ -184,10 +191,11 @@ func _add_side(p: Player, is_from: bool) -> void:
 		_update_problem())
 	for k in range(_cash_steps.size() - 1, -1, -1):
 		var step := _cash_steps[k]
-		UiStyle.button(cash_row, "-%d" % step, func() -> void: cash.value -= step)
-	cash_row.add_child(cash)
+		UiStyle.button(minus, "-%d" % step, func() -> void: cash.value -= step)
 	for step in _cash_steps:
-		UiStyle.button(cash_row, "+%d" % step, func() -> void: cash.value += step)
+		UiStyle.button(plus, "+%d" % step, func() -> void: cash.value += step)
+	for part: Control in [minus, cash, plus]:
+		cash_row.add_child(part)
 	var deeds: Array[int] = _draft.give_deeds if is_from else _draft.get_deeds
 	for deed in tc.board.deeds_owned_by(p.id):
 		var i := deed.space_index
@@ -240,9 +248,15 @@ func _cancel_counter() -> void:
 	refresh()
 
 
+## The problem line, hidden while empty so it takes no room in the pinned rows (Q22 Fold).
+func _set_problem(text: String) -> void:
+	_problem.text = text
+	_problem.visible = not text.is_empty()
+
+
 func _update_problem() -> void:
 	var problem := _controller.trade_problem(_draft)
-	_problem.text = "" if _draft.is_empty() else problem
+	_set_problem("" if _draft.is_empty() else problem)
 	if _send_button != null:
 		_send_button.disabled = not problem.is_empty()
 
@@ -264,6 +278,7 @@ func _add_check(text: String, pressed: bool, enabled: bool, action: Callable) ->
 	c.text = text
 	c.button_pressed = pressed
 	c.disabled = not enabled
+	c.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART  # a long name wraps, never widens the overlay (Q22)
 	c.custom_minimum_size = Vector2(0, UiStyle.touch())
 	c.add_theme_font_size_override("font_size", UiStyle.font("body"))
 	c.mouse_filter = Control.MOUSE_FILTER_PASS

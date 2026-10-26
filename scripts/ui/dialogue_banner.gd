@@ -6,7 +6,9 @@ extends PanelContainer
 ## waiting line is dropped beyond that, so the banner never falls far behind the game. Purely
 ## visual: rules never wait on it (Main only lets bots pause while the backlog is long, and the
 ## timer always drains it). The queue logic runs through advance(), so tests drive it headless.
-## Main sizes it per shown line as a compact toast (place_in), not the whole reservation.
+## Main sizes it per shown line as a compact toast (place_in), not the whole reservation, and never
+## past it: a line too long for the reservation ends in an ellipsis on its last line that fits
+## (Q22; the full line stays in the Log).
 
 signal line_shown(text: String)
 signal emptied
@@ -22,6 +24,11 @@ func _init() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	_label = Label.new()
 	_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# Trimmed, the wrapped label no longer asks for its full text height, so the toast holds the
+	# reservation's height (Q22) and the last line that fits ends in an ellipsis. It fills the toast
+	# (a Label shrinks to its now 1 px minimum height by default and would draw no line).
+	_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_label.size_flags_vertical = Control.SIZE_FILL
 	_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_label.add_theme_font_size_override("font_size", UiStyle.font("body"))

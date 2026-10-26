@@ -12,18 +12,22 @@ extends Control
 ##
 ## Board overlay (Dig 5a2): while a person owes a forced input (auction bid, debt, trade answer) or
 ## opened Action, one opaque overlay floats over the board (overlay_rect_for: the free band after
-## the board, else above or below the dialogue banner) and the board never resizes or moves for it.
-## It names the seat it serves (the bidder, the debtor, the offer's receiver or the acting seat),
-## then cash chips, the status line, the pinned Auction / Debt banners and tabbed Holdings / Trade /
-## Log; Done closes Action. Each overlay opens with the sections closed unless its purpose opens one
+## the board; in portrait where that band is too short, docked at the bottom (Q22 1B); else above
+## or below the dialogue banner) and the board never resizes or moves for it. It keeps clear of the
+## banner, except that a bottom-docked overlay with its sections open covers the banner's
+## reservation down to the play bottom (1B; the turn panel still keeps clear). It names the seat it
+## serves (the bidder, the debtor, the offer's receiver or the acting seat), then cash chips, the
+## status line, the pinned Auction / Debt banners and tabbed Holdings / Trade / Log; Done closes
+## Action. Each overlay opens with the sections closed unless its purpose opens one
 ## (Action and debt: Holdings; a trade offer: Trade). Main alone shows the sections, one at a time
 ## (Q21: no panel refresh re-shows another beside it).
 ##
 ## Motion and dialogue (P4-DEMO): TurnController.game_event feeds BoardView's animation queue
 ## (dice tumble, pawn hops, Brig jump) and the DialogueBanner over the board center (theme
 ## dialogue.json lines via DialogueLines). Banner lines are queued behind the pawn so they appear
-## when it lands; each is a compact toast sized to its text (Q21). Bots wait for the board and for a
-## short banner backlog, then play on the bot timer.
+## when it lands; each is a compact toast sized to its text (Q21), never past the banner
+## reservation: a longer line ends in an ellipsis (Q22; the full line stays in the Log). Bots wait
+## for the board and for a short banner backlog, then play on the bot timer.
 
 enum Section { HOLDINGS, TRADE, LOG }
 
@@ -255,17 +259,38 @@ static func board_side_for(avail: Vector2) -> float:
 	return minf(avail.x, avail.y)
 
 
+## Q22 1B (Shibi, Oct 26 2026), the one exception to keeping the overlay clear of the dialogue
+## banner: in portrait, where the free band below the board (less the pad) is shorter than the
+## overlay's need.y, the overlay docks at the bottom, and with its sections open it covers the
+## banner's reservation (overlay_rect_for, overlay_fits). Phones whose band holds it and every
+## landscape size keep their placement.
+static func docks_at_bottom(play: Rect2, board: Rect2, need: Vector2) -> bool:
+	return play.size.y > play.size.x \
+			and play.end.y - board.end.y - 2.0 * UiStyle.num("screen_margin", 8.0) < need.y
+
+
 ## Where the board overlay floats, in the caller's coordinates (A1.5: the board never moves for it).
 ## Candidates in order: the free band after the board (below it in portrait, right of it in
-## landscape), the play width above the dialogue `banner`, then below it. It takes the first that
-## is at least `need` (the overlay's minimum size; width also at least data/ui.json
-## overlay_min_width), else the tallest wide enough, so the banner line stays readable and never
-## takes the overlay's presses. `fill`: the area's full height (its sections are open), else
-## need.y, centered. Width: at most overlay_max_width. With no candidate wide enough (tiny windows),
-## the whole play area.
+## landscape); in portrait where that band is shorter than need.y (docks_at_bottom), the bottom
+## dock: closed, need.y high at the bottom of the play width below the dialogue `banner`; open
+## (`fill`), from the banner's top to the play bottom, over the banner; then the play width above
+## the banner, then below it. It takes the first that is at least `need` (the overlay's minimum
+## size; width also at least data/ui.json overlay_min_width), else the tallest wide enough of the
+## band and the two banner areas, so the banner line stays readable and never takes the overlay's
+## presses. `fill`: the area's full height (its sections are open), else need.y, centered (at the
+## dock's bottom when docked). Width: at most overlay_max_width. With no candidate wide enough
+## (tiny windows), the whole play area.
 static func overlay_rect_for(play: Rect2, board: Rect2, banner: Rect2, need: Vector2, fill: bool) -> Rect2:
 	var pad := UiStyle.num("screen_margin", 8.0)
 	var min_w := maxf(need.x, UiStyle.num("overlay_min_width", 256.0))
+	var max_w := maxf(need.x, UiStyle.num("overlay_max_width", 560.0))
+	if docks_at_bottom(play, board, need):
+		var top := banner.position.y if fill else banner.end.y
+		var dock := Rect2(play.position.x, top, play.size.x, play.end.y - top).grow(-pad)
+		if dock.size.x >= min_w and dock.size.y >= need.y:
+			var dw := minf(dock.size.x, max_w)
+			var dh := dock.size.y if fill else need.y
+			return Rect2(dock.get_center().x - dw * 0.5, dock.end.y - dh, dw, dh)
 	var band := Rect2(board.end.x, play.position.y, play.end.x - board.end.x, play.size.y)
 	if play.size.y > play.size.x:
 		band = Rect2(play.position.x, board.end.y, play.size.x, play.end.y - board.end.y)
@@ -282,7 +307,7 @@ static func overlay_rect_for(play: Rect2, board: Rect2, banner: Rect2, need: Vec
 		best_h = a.size.y
 		if a.size.y >= need.y:
 			break
-	var w := minf(best.size.x, maxf(need.x, UiStyle.num("overlay_max_width", 560.0)))
+	var w := minf(best.size.x, max_w)
 	var h := best.size.y if fill else minf(need.y, best.size.y)
 	return Rect2(best.get_center().x - w * 0.5, best.position.y + (best.size.y - h) * 0.5, w, h)
 
@@ -514,8 +539,9 @@ func _place_overlay() -> void:
 
 
 ## True when the open overlay, as placed (its applied position and size), lies inside the play area
-## at its full minimum size, clear of the dialogue banner (tests: pinned answer rows stay on screen).
-## Nothing to fit while it is hidden.
+## at its full minimum size, clear of the dialogue banner unless it docks over it with its sections
+## open (docks_at_bottom, Q22 1B) (tests: pinned answer rows stay on screen). Nothing to fit while
+## it is hidden.
 func overlay_fits() -> bool:
 	if not _overlay.visible:
 		return true
@@ -524,7 +550,8 @@ func overlay_fits() -> bool:
 	var r := Rect2(_overlay.position, _overlay.size)
 	var need := _overlay.get_combined_minimum_size()
 	return play.encloses(r) and r.size.x + 0.5 >= need.x and r.size.y + 0.5 >= need.y \
-			and not r.intersects(BoardView.banner_rect_in(board))
+			and (not r.intersects(BoardView.banner_rect_in(board)) \
+				or (_sections_open and docks_at_bottom(play, board, need)))
 
 
 ## The debtor (maybe not the current player) becomes the Holdings actor so they can raise funds.
@@ -576,8 +603,9 @@ func _say_later(text: String, color: Color = Color.TRANSPARENT) -> void:
 
 
 ## The banner is a compact toast for its line, centered in the lower middle of the board center
-## (BoardView.banner_rect, the reservation overlays and the turn panel keep clear of); re-placed on
-## every shown line and board resize (Q21 Fold fix: no near-empty card over a third of the board).
+## (BoardView.banner_rect: the reservation the turn panel and the overlay keep clear of, but for a
+## bottom-docked open overlay, Q22 1B), never past it (a longer line ends in an ellipsis); re-placed
+## on every shown line and board resize (Q21 Fold fix: no near-empty card over a third of the board).
 func _place_banner() -> void:
 	_banner.place_in(_board_view.banner_rect())
 

@@ -323,8 +323,8 @@ func land_card_pose() -> Dictionary:
 	return pose
 
 
-## Between dice and the unchanged banner reservation. TODO Q21 device tune; toast overflow
-## remains the existing _placeholder. No new nodes, timers or input surfaces to clean up.
+## Between dice and the unchanged banner reservation. TODO Q21 device tune; a long toast now stops
+## at the reservation (Q22 truncate-to-reserve). No new nodes, timers or input surfaces to clean up.
 func land_card_rect() -> Rect2:
 	var br := _board_rect()
 	var cell := br.size.x / GRID
@@ -605,7 +605,8 @@ func banner_rect() -> Rect2:
 	return banner_rect_in(_board_rect())
 
 
-## banner_rect() for the board square `br`, in br's coordinates (Main keeps overlays clear of it).
+## banner_rect() for the board square `br`, in br's coordinates (Main keeps the turn panel and the
+## overlay clear of it, but for a bottom-docked overlay with its sections open, Q22 1B).
 static func banner_rect_in(br: Rect2) -> Rect2:
 	var cell := br.size.x / GRID
 	var inner := Rect2(br.position + Vector2(cell, cell) * 1.3, Vector2(cell, cell) * 8.4)
@@ -616,8 +617,9 @@ static func banner_rect_in(br: Rect2) -> Rect2:
 ## what overlays and the turn panel keep clear of): the text wrapped at the reservation's text width
 ## (`font`, `font_size`, `line_spacing` between lines, as the banner Label draws it) plus `style`'s
 ## content margins, centered in the reservation (Q21: no near-empty card over the board). Taller
-## content takes the full reservation width and grows down from its top (the text is never cut, but
-## overlays only keep clear of the reservation). Font metrics only, so it holds outside the tree too.
+## content takes the whole reservation and no more (Q22 truncate-to-reserve: the banner's last line
+## that fits ends in an ellipsis; the full line stays in the Log). Font metrics only, so it holds
+## outside the tree too.
 static func toast_rect_in(reserve: Rect2, text: String, font: Font, font_size: int, line_spacing: float,
 		style: StyleBox) -> Rect2:
 	var margins := style.get_minimum_size()
@@ -631,7 +633,7 @@ static func toast_rect_in(reserve: Rect2, text: String, font: Font, font_size: i
 	# 1 px past the widest line: the Label re-wraps at the toast's width and must keep the same breaks.
 	var box := Vector2(minf(reserve.size.x, ceilf(para.get_size().x) + 1.0 + margins.x), ceilf(text_h) + margins.y)
 	if box.y > reserve.size.y:
-		return Rect2(reserve.position, Vector2(reserve.size.x, box.y))
+		return reserve
 	return Rect2(reserve.get_center() - box * 0.5, box)
 
 
