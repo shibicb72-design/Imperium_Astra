@@ -159,6 +159,7 @@ func start(window: Window) -> void:
 	controller.debt_started.connect(_on_debt_started)
 	controller.trade_proposed.connect(func(_o: Trade.Offer) -> void: show_section(Section.TRADE))
 	controller.game_event.connect(_on_game_event)
+	controller.auction_started.connect(_on_auction_started)
 	controller.doubles_extra_turn.connect(func(p: Player) -> void:
 		_say_later(_lines.line("doubles", {"name": p.display_name}), p.color))
 	_board_view.animate = is_inside_tree()
@@ -587,20 +588,51 @@ func _served_seat() -> Player:
 func _on_game_event(kind: StringName, info: Dictionary) -> void:
 	var pid := int(info.get("player", -1))
 	match kind:
+		&"game_over":
+			_board_view.queue_victory(pid)
+		&"tax":
+			_board_view.queue_cash_fly({"player": pid, "space": info.space, "amount": info.amount,
+				"to": &"bank", "tax": true,
+				"light": controller.board.spaces[int(info.space)].space_type == Space.Type.LUXURY_TAX})
+		&"bought":
+			_board_view.queue_fx(&"claim_bar", info, UiStyle.num("claim_seconds", 0.35))
+			if controller.board.spaces[int(info.space)].space_type == Space.Type.RAILROAD:
+				var gates: Array[int] = []
+				for s in controller.board.spaces:
+					if s.space_type == Space.Type.RAILROAD and s.deed.owner == pid:
+						gates.append(s.index)
+				_board_view.queue_fx(&"gate_count", {"player": pid, "spaces": gates}, UiStyle.num("gate_count_step_seconds", 0.1) * gates.size())
+			_board_view.queue_cash_fly({"player": pid, "space": info.space, "amount": info.price, "to": &"bank"})
+		&"rent":
+			var s := controller.board.spaces[int(info.space)]
+			if s.space_type == Space.Type.RAILROAD:
+				var base := Rules.railroad_rent(controller.board, s.deed, controller.config)
+				_board_view.queue_cash_fly({"player": pid, "space": info.space, "amount": info.amount,
+					"to": int(info.owner), "gate": true, "double": base > 0 and int(info.amount) == base * 2,
+					"failed": not bool(info.get("paid", true))})
 		&"built_house", &"built_hotel", &"sold_house", &"sold_hotel":
 			_board_view.building_pop(int(info["space"]), kind in [&"sold_house", &"sold_hotel"],
 				kind in [&"built_hotel", &"sold_hotel"], int(info.get("count", info.get("houses", 1))))
 		&"bankrupt":
 			_board_view.fade_out_piece(pid, UiStyle.num("bankrupt_fade_seconds", 0.8))
 		&"rolled":
-			_board_view.queue_dice(int(info["d1"]), int(info["d2"]))
+			_board_view.queue_dice(int(info["d1"]), int(info["d2"]), bool(info.get("doubles", false)))
 		&"moved":
-			_board_view.queue_move(pid, int(info["from"]), int(info["steps"]), true)
+			var from := int(info["from"])
+			var steps := int(info["steps"])
+			var salary := controller.config.go_salary if steps > 0 and from + steps >= Board.SPACE_COUNT else 0
+			_board_view.queue_move(pid, from, steps, true, salary)
 			return
 		&"jailed":
 			_board_view.queue_jump(pid, int(info["from"]), int(info["to"]), true)
 	var color := controller.players[pid].color if pid >= 0 and pid < controller.players.size() else Color.TRANSPARENT
 	_say_later(_lines.event_line(controller, kind, info), color)
+
+
+func _on_auction_started(space_index: int) -> void:
+	if space_index < 0:
+		return  # Q10 building-lot contest UX remains a placeholder.
+	_board_view.queue_fx(&"gavel", {"space": space_index}, UiStyle.num("gavel_seconds", 0.4))
 
 
 ## Banner line after everything the board has queued so far.

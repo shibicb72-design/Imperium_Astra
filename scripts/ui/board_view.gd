@@ -28,9 +28,8 @@ extends Control
 ##
 ## FX hooks (P5 structure hooks): queue_fx(kind, info, dur) queues a timed presentation item that
 ## holds the same queue, so is_animating() stays the one busy signal (no second FX flag). fx_pose(kind)
-## is the pose table for the active fx: an identity stub for now (active, kind, t, info, neutral
-## scale / offset / rotation); the tile / event animations fill the poses later. Nothing in the
-## rules waits on an fx and no fx changes rules state.
+## samples claim, gavel, rest and victory poses; cash_fly_pose samples shared money arcs. Pass-GO
+## is sampled inside the move item so its duration cap is preserved. Nothing changes rules state.
 ##
 ## Die affordance (P5-FEEL Dig 5): while Main sets die_ready, the dice area shows a die-ready look
 ## (blank faces ringed in the seat colour, OPEN_QUESTIONS Q27) instead of the last-roll readout, so
@@ -83,6 +82,7 @@ var animate := false
 ## Die-ready look and die presses on (set_die_ready); Main sets it from its gate.
 var die_ready := false
 var _die_tint := Color.WHITE
+var _idle_time := 0.0
 
 ## Board index each token is drawn at (player id -> index); catches up as the queue plays.
 var _shown_pos: Dictionary = {}
@@ -178,6 +178,8 @@ func _rolling() -> bool:
 
 func _faces() -> Vector2i:
 	if _rolling():
+		if _t / float(_item["dur"]) >= UiStyle.num("dice_bounce_settle_fraction", 0.88):
+			return Vector2i(int(_item.d1), int(_item.d2))
 		return _tumble
 	return _shown_dice if is_animating() else Vector2i(controller.dice.d1, controller.dice.d2)
 
@@ -204,8 +206,9 @@ func die_hit_rect() -> Rect2:
 	return r.grow_individual(gx, gy, gx, gy)
 
 
-func queue_dice(d1: int, d2: int) -> void:
-	_enqueue({"type": &"dice", "d1": d1, "d2": d2, "dur": UiStyle.num("dice_roll_seconds", 0.55)})
+func queue_dice(d1: int, d2: int, doubles: bool = false) -> void:
+	_enqueue({"type": &"dice", "d1": d1, "d2": d2, "doubles": doubles,
+		"dur": UiStyle.num("dice_roll_seconds", 0.55)})
 
 
 ## Presentation-only ballistic arcs, sampled by advance() and shared with drawing/tests.
@@ -220,6 +223,8 @@ func dice_pose(die: int) -> Dictionary:
 	var stretch := Vector2.ONE
 	var offset := Vector2.ZERO
 	var angle := 0.0
+	var pip_scale := 1.0
+	var glint := 0.0
 	if _rolling():
 		var t := clampf(_t / float(_item["dur"]), 0.0, 1.0)
 		var release := UiStyle.num("dice_bounce_release_fraction", 0.08)
@@ -228,7 +233,8 @@ func dice_pose(die: int) -> Dictionary:
 		var settle := UiStyle.num("dice_bounce_settle_fraction", 0.88)
 		var direction := -1.0 if die == 0 else 1.0
 		if t < release:
-			stretch = Vector2(1.0 + 0.18 * t / release, 1.0 - 0.18 * t / release)
+			var press := sin(PI * t / release)
+			stretch = Vector2.ONE * (1.0 - UiStyle.num("dice_press_depth", 0.1) * press)
 		elif t < land:
 			var u := (t - release) / (land - release)
 			var arc := 4.0 * u * (1.0 - u)
@@ -248,21 +254,30 @@ func dice_pose(die: int) -> Dictionary:
 		else:
 			var impact := 1.0 - (t - settle) / (1.0 - settle)
 			stretch = Vector2(1.0 + 0.12 * impact, 1.0 - 0.12 * impact)
+			pip_scale = 1.0 + UiStyle.num("dice_pip_lock_extra", 0.3) * impact
+			if bool(_item.get("doubles", false)):
+				glint = sin(PI * (1.0 - impact))
 	return {"point": rest + offset + Vector2(0.0, -lift), "lift": lift,
-		"scale": stretch, "rotation": angle}
+		"scale": stretch, "rotation": angle, "pip_scale": pip_scale, "glint": glint}
 
 
 ## Hop `steps` spaces (negative: backward) from `from`. Long moves speed up to fit
 ## pawn_move_max_seconds.
-func queue_move(player_id: int, from: int, steps: int, show_land_card: bool = false) -> void:
+func queue_move(player_id: int, from: int, steps: int, show_land_card: bool = false, salary: int = 0) -> void:
 	if steps == 0:
 		return
 	var per := UiStyle.num("pawn_step_seconds", 0.14)
 	per = minf(per, UiStyle.num("pawn_move_max_seconds", 1.8) / absi(steps))
 	_enqueue({"type": &"move", "player": player_id, "from": from, "steps": steps, "per": per,
-			"dur": per * absi(steps)})
+			"dur": per * absi(steps), "salary": salary})
 	if show_land_card:
-		queue_land_card(posmod(from + steps, Board.SPACE_COUNT))
+		var destination := posmod(from + steps, Board.SPACE_COUNT)
+		if controller != null and controller.board.spaces[destination].space_type == Space.Type.FREE_PARKING:
+			queue_fx(&"anchor", {"player": player_id, "space": destination}, UiStyle.num("anchor_seconds", 0.6))
+		if controller != null and controller.board.spaces[destination].space_type == Space.Type.RAILROAD:
+			var owner := controller.board.spaces[destination].deed.owner
+			queue_fx(&"gate_arrival", {"player": player_id, "space": destination, "owner": owner}, UiStyle.num("gate_arrival_seconds", 0.25))
+		queue_land_card(destination)
 
 
 ## Straight arc from `from` to `to` (sent to the Brig).
@@ -283,10 +298,44 @@ func queue_land_card(index: int) -> void:
 	for line in details:
 		if line.begins_with("Price "):
 			lines.append(line.get_slice("  |  ", 0))
-		elif line.begins_with("Rent ") or line.begins_with("Pay $"):
+		elif line.begins_with("Rent ") or line.begins_with("Pay $") or line == "Mortgaged" or line.begins_with("Owner:") or (line.length() > 0 and line.left(1).is_valid_int()):
 			lines.append(line)
+	var s := controller.board.spaces[index]
+	var chrome := land_card_chrome(s.space_type)
+	if s.space_type == Space.Type.STREET:
+		chrome.stripe = controller.board.group_info.get(s.color_group_id, {}).get("color", chrome.stripe)
+	var owner_color := Color.TRANSPARENT
+	if s.deed != null and s.deed.owner >= 0:
+		owner_color = controller.players[s.deed.owner].color
+		lines.append("Owner: %s" % controller.players[s.deed.owner].display_name)
 	_enqueue({"type": &"land_card", "index": index, "text": "\n".join(lines),
+		"space_type": s.space_type, "owner_color": owner_color, "chrome": chrome,
 		"dur": UiStyle.num("land_card_seconds", 2.6)})
+
+
+## Stable types select vector chrome; words and prices never select the artwork.
+static func land_card_chrome(space_type: int) -> Dictionary:
+	var stripe := UiStyle.color("accent")
+	var glyph := &"tab"
+	var weight := 4.0
+	match space_type:
+		Space.Type.STREET:
+			stripe = UiStyle.color("board_border")
+			glyph = &"stripe"
+		Space.Type.RAILROAD:
+			glyph = &"ring"
+		Space.Type.UTILITY:
+			glyph = &"bolt"
+		Space.Type.INCOME_TAX, Space.Type.LUXURY_TAX:
+			stripe = UiStyle.color("alert")
+			glyph = &"stamp"
+			weight = 7.0 if space_type == Space.Type.INCOME_TAX else 3.0
+		Space.Type.COMMUNITY_CHEST:
+			stripe = UiStyle.color("accent_dim")
+		Space.Type.GO, Space.Type.FREE_PARKING, Space.Type.JAIL_CORNER, Space.Type.GO_TO_JAIL:
+			stripe = corner_tint(space_type)
+			glyph = &"corner"
+	return {"stripe": stripe, "glyph": glyph, "weight": weight}
 
 
 ## Shared draw/test pose: ballistic arrival, squash, rebound, settle, hold, windup and exit.
@@ -350,15 +399,24 @@ func _draw_land_card() -> void:
 	var center: Vector2 = r.get_center() + pose.offset - Vector2(0, pose.lift)
 	draw_set_transform(center.round(), pose.rotation, pose.scale)
 	var box := Rect2(-r.size * 0.5, r.size)
-	var s := controller.board.spaces[int(_item["index"])]
-	var accent := UiStyle.color("accent")
-	if s.space_type == Space.Type.STREET:
-		accent = controller.board.group_info.get(s.color_group_id, {}).get("color", accent)
+	var accent: Color = _item.chrome.stripe
 	var chrome := UiStyle.card_style(accent)
 	chrome.set_corner_radius_all(0)
 	chrome.draw(get_canvas_item(), box)
 	# Square group stripe and stepped pixel corners, using the active pack palette.
-	draw_rect(Rect2(box.position + Vector2(6, 5), Vector2(box.size.x - 12, 4)), accent)
+	draw_rect(Rect2(box.position + Vector2(6, 5), Vector2(box.size.x - 12, float(_item.chrome.weight))), accent)
+	if (_item.owner_color as Color).a > 0.0:
+		draw_rect(Rect2(box.position + Vector2(3, 12), Vector2(3, box.size.y - 18)), _item.owner_color)
+	var mark := box.position + Vector2(box.size.x - 16, 22)
+	match _item.chrome.glyph:
+		&"ring":
+			draw_arc(mark, 7, 0, TAU, 24, UiStyle.color("accent"), 2)
+		&"bolt":
+			draw_polyline(PackedVector2Array([mark + Vector2(3, -7), mark + Vector2(-4, 0), mark + Vector2(4, 0), mark + Vector2(-3, 7)]), UiStyle.color("accent"), 2)
+		&"stamp":
+			draw_rect(Rect2(mark - Vector2.ONE * 6, Vector2.ONE * 12), accent, false, 2)
+		&"corner":
+			_draw_corner_icon(Rect2(mark - Vector2(16, 23), Vector2.ONE * 32), int(_item.space_type), UiStyle.color("accent"))
 	for side in [-1.0, 1.0]:
 		draw_rect(Rect2(Vector2(side * (box.size.x * 0.5 - 9) - 2, box.end.y - 9), Vector2(4, 4)), accent)
 	var lines := String(pose.text).split("\n")
@@ -367,7 +425,7 @@ func _draw_land_card() -> void:
 	var y := box.position.y + 12.0 + font.get_ascent(fs)
 	for line in lines:
 		draw_string(font, Vector2(box.position.x + 10, y), line, HORIZONTAL_ALIGNMENT_CENTER,
-			box.size.x - 20, fs, UiStyle.color("text"))
+			box.size.x - 20, fs, UiStyle.color("text_muted") if line == "Mortgaged" else UiStyle.color("text"))
 		y += font.get_height(fs)
 	draw_set_transform(Vector2.ZERO)
 
@@ -384,9 +442,8 @@ func queue_fx(kind: StringName, info: Dictionary, dur: float) -> void:
 	_enqueue({"type": &"fx", "kind": kind, "info": info, "dur": maxf(0.0, dur)})
 
 
-## Pose for the fx of `kind` this frame. Identity stub: active only while that fx plays, t = its
-## 0..1 progress, info = what was queued; scale / offset / rotation are neutral until the
-## tile / event animations fill the table. Unknown kinds give the same neutral pose, inactive.
+## Shared analytic FX pose. Only the matching active item contributes; no timers or orphan nodes.
+## Unimplemented kinds retain neutral transforms for the later Pass B consumers.
 func fx_pose(kind: StringName) -> Dictionary:
 	var pose := {"active": false, "kind": kind, "t": 0.0, "info": {}, "lift": 0.0, "scale": Vector2.ONE,
 		"offset": Vector2.ZERO, "rotation": 0.0}
@@ -395,7 +452,197 @@ func fx_pose(kind: StringName) -> Dictionary:
 	pose.active = true
 	pose.t = clampf(_t / maxf(float(_item["dur"]), 0.0001), 0.0, 1.0)
 	pose.info = _item["info"]
+	var t: float = pose.t
+	match kind:
+		&"victory":
+			var sweep := UiStyle.num("victory_sweep_seconds", 0.6) / float(_item.dur)
+			var laurel := UiStyle.num("victory_laurel_seconds", 0.4) / float(_item.dur)
+			pose.sweep = clampf(t / sweep, 0, 1)
+			pose.laurel = smoothstep(sweep, minf(1.0, sweep + laurel), t)
+			var height := UiStyle.num("victory_hop_height", 0.4) if t < 0.5 else UiStyle.num("victory_second_hop_height", 0.3)
+			pose.lift = height * sin(PI * fmod(t * 2.0, 1.0))
+		&"anchor":
+			pose.rotation = TAU * smoothstep(0.0, 1.0, t)
+			pose.lift = UiStyle.num("anchor_settle_height", 0.12) * sin(PI * minf(t * 2, 1))
+		&"claim_bar":
+			pose.lift = UiStyle.num("claim_hop_height", 0.3) * sin(PI * t)
+		&"gavel":
+			pose.rotation = -0.8 * sin(PI * minf(t * 2.0, 1.0))
+			pose.offset = Vector2(0, -sin(PI * t))
 	return pose
+
+
+func anchor_pose() -> Dictionary:
+	return fx_pose(&"anchor")
+
+
+func queue_victory(player_id: int) -> void:
+	queue_fx(&"victory", {"player": player_id}, UiStyle.num("victory_seconds", 1.2))
+
+
+func victory_pose() -> Dictionary:
+	return fx_pose(&"victory")
+
+
+## Shared transient money arc. Numeric payload only; never changes a balance.
+func queue_cash_fly(info: Dictionary) -> void:
+	var duration := UiStyle.num("cash_fly_light_seconds", 0.45) if bool(info.get("light", false)) else UiStyle.num("cash_fly_seconds", 0.5)
+	queue_fx(&"cash_fly", info.duplicate(true), duration)
+
+
+func cash_fly_pose() -> Dictionary:
+	var pose := fx_pose(&"cash_fly")
+	pose.point = Vector2.ZERO
+	pose.failed = bool(pose.info.get("failed", false))
+	pose.receipt = 0.0
+	if not pose.active:
+		return pose
+	var info: Dictionary = pose.info
+	var cell := _board_rect().size.x / GRID
+	var start := piece_state(int(info.player)).point
+	var target := land_card_rect().get_center()
+	if info.get("to", &"bank") is int:
+		target = piece_state(int(info.to)).point
+	var t: float = pose.t
+	# tax is emitted before _charge; sample only as the queue plays after the synchronous rules step.
+	if bool(info.get("tax", false)):
+		for debt in controller.pending_debts:
+			if debt.debtor == int(info.player) and debt.creditor == PropertyDeed.BANK and debt.amount == int(info.amount):
+				pose.failed = true
+	var u := smoothstep(0.0, 1.0, t)
+	if pose.failed:
+		var stall := UiStyle.num("cash_fly_stall_fraction", 0.45)
+		u = minf(t / stall, 1.0) * stall if t < 0.6 else stall * (1.0 - smoothstep(0.6, 1.0, t))
+	var height := UiStyle.num("cash_fly_height", 0.8)
+	if bool(info.get("light", false)):
+		height *= UiStyle.num("cash_fly_light_height_factor", 0.6)
+	pose.point = start.lerp(target, u) - Vector2(0, cell * height * 4.0 * u * (1.0 - u))
+	if bool(info.get("gate", false)):
+		var via := _cell_rect(int(info.space)).get_center()
+		var a := start.lerp(via, u)
+		var b := via.lerp(target, u)
+		pose.point = a.lerp(b, u) - Vector2(0, cell * height * 4 * u * (1 - u))
+	if pose.failed and t > 0.6:
+		pose.point.x += cell * UiStyle.num("cash_fly_return_shake", 0.06) * sin(TAU * 3 * t) * sin(PI * t)
+	pose.scale = Vector2.ONE * lerpf(1.0, 0.3, u)
+	if not pose.failed and not (info.get("to", &"bank") is int):
+		pose.receipt = sin(PI * clampf((t - 0.7) / 0.3, 0, 1))
+	return pose
+
+
+func _cell_rect(index: int) -> Rect2:
+	var br := _board_rect()
+	var cell := br.size.x / GRID
+	return Rect2(br.position + Vector2(cell_of(index)) * cell, Vector2.ONE * cell)
+
+
+## Crossing beat belongs to the move item, never a second busy lane. Backward/jail moves cannot pay.
+func go_crossing_pose() -> Dictionary:
+	var pose := {"active": false, "t": 0.0, "amount": 0, "point": Vector2.ZERO}
+	if _item.get("type") != &"move" or int(_item.get("salary", 0)) <= 0 or int(_item.steps) <= 0:
+		return pose
+	var crossing := Board.SPACE_COUNT - int(_item.from) - 1
+	if crossing < 0 or crossing >= int(_item.steps):
+		return pose
+	var start := crossing * float(_item.per)
+	var duration := minf(UiStyle.num("go_flourish_seconds", 0.4), float(_item.dur) - start)
+	if _t < start or _t >= start + duration:
+		return pose
+	pose.active = animate
+	pose.t = clampf((_t - start) / duration, 0, 1)
+	pose.amount = int(_item.salary)
+	var t: float = pose.t
+	var cell := _board_rect().size.x / GRID
+	pose.point = _cell_rect(0).get_center().lerp(piece_state(int(_item.player)).point, t) - Vector2(0, cell * UiStyle.num("go_tag_height", 0.6) * 4 * t * (1 - t))
+	return pose
+
+
+func _draw_go_crossing() -> void:
+	var pose := go_crossing_pose()
+	if not pose.active:
+		return
+	var r := _cell_rect(0)
+	var tint := corner_tint(Space.Type.GO).lerp(UiStyle.color("accent"), pose.t)
+	draw_arc(r.get_center(), r.size.x * 0.4, -PI * 0.5, -PI * 0.5 + TAU * float(pose.t), 40, tint, 3)
+	var font := UiStyle.display_font()
+	var label := "+$%d" % int(pose.amount)
+	var at: Vector2 = pose.point - Vector2(r.size.x, 0)
+	var fs := maxi(10, int(r.size.x * 0.35))
+	draw_string_outline(font, at, label, HORIZONTAL_ALIGNMENT_CENTER, r.size.x * 2, fs, 2, Color.BLACK)
+	draw_string(font, at, label, HORIZONTAL_ALIGNMENT_CENTER, r.size.x * 2, fs, UiStyle.color("text"))
+
+
+func _draw_event_fx() -> void:
+	if _item.get("type") != &"fx":
+		return
+	var kind: StringName = _item.kind
+	var pose := fx_pose(kind)
+	var info: Dictionary = pose.info
+	var accent := UiStyle.color("accent")
+	var cell := _board_rect().size.x / GRID
+	match kind:
+		&"victory":
+			var winner := piece_state(int(info.player))
+			var radius := _board_rect().size.length() * float(pose.sweep)
+			var tint := Color(accent, 1.0 - float(pose.sweep))
+			draw_arc(winner.rest, radius, 0, TAU, 96, tint, 3)
+			var grow: float = pose.laurel
+			if grow > 0:
+				for side in [-1.0, 1.0]:
+					var start := PI * 0.5
+					var end := start + PI * grow
+					draw_set_transform(winner.point, 0, Vector2(side, 1))
+					draw_arc(Vector2.ZERO, cell * 0.45, start, end, 32, accent, 2)
+					for leaf in range(6):
+						if float(leaf + 1) / 6 > grow:
+							continue
+						var angle := start + PI * float(leaf + 1) / 7
+						var point := Vector2.from_angle(angle) * cell * 0.45
+						draw_line(point, point + Vector2.from_angle(angle - 0.5) * cell * 0.16, accent, 3)
+					draw_set_transform(Vector2.ZERO)
+		&"gate_arrival":
+			var r := _cell_rect(int(info.space))
+			var tint := controller.players[int(info.owner)].color if int(info.owner) >= 0 else accent
+			draw_rect(r.grow(-2), Color(tint, sin(PI * float(pose.t))), false, 2)
+			draw_arc(r.get_center(), cell * lerpf(0.1, 0.45, pose.t), 0, TAU, 32, Color(accent, 1.0 - float(pose.t)), 2)
+		&"gate_count":
+			var spaces: Array = info.spaces
+			if not spaces.is_empty():
+				var which := mini(int(float(pose.t) * spaces.size()), spaces.size() - 1)
+				draw_rect(_cell_rect(int(spaces[which])).grow(-2), controller.players[int(info.player)].color, false, 3)
+		&"anchor":
+			var r := _cell_rect(int(info.space))
+			var center := r.get_center()
+			var tint := UiStyle.color("accent_dim").lerp(accent, sin(PI * float(pose.t)))
+			draw_arc(center, cell * 0.24, pose.rotation, pose.rotation + PI * 1.7, 32, tint, 2)
+			var end := center + Vector2.from_angle(pose.rotation) * cell * 0.3
+			draw_circle(end, cell * 0.035, accent)
+			var point := piece_state(int(info.player)).point
+			var retract := 1.0 - smoothstep(0.75, 1.0, pose.t)
+			draw_line(point, point.lerp(center, retract), tint, 1)
+		&"gavel":
+			var r := _cell_rect(int(info.space))
+			draw_rect(r.grow(-2), Color(accent, absf(sin(TAU * float(pose.t)))), false, 3)
+			var center := r.get_center().lerp(land_card_rect().get_center(), smoothstep(0, 1, pose.t))
+			draw_set_transform(center, pose.rotation)
+			draw_line(Vector2.ZERO, Vector2(0, cell * 0.3), accent, 3)
+			draw_rect(Rect2(-cell * 0.2, -cell * 0.08, cell * 0.4, cell * 0.16), accent)
+			draw_set_transform(Vector2.ZERO)
+			_draw_label(UiStyle.display_font(), Rect2(center + Vector2(-cell * 2, cell * 0.4), Vector2(cell * 4, cell)), controller.board.spaces[int(info.space)].display_name)
+		&"cash_fly":
+			var cash := cash_fly_pose()
+			draw_set_transform(cash.point, 0, cash.scale)
+			var label := "-$%d" % int(info.amount)
+			var font := UiStyle.display_font()
+			var fs := maxi(10, int(cell * 0.35))
+			var at := Vector2(-cell, 0)
+			draw_string_outline(font, at, label, HORIZONTAL_ALIGNMENT_CENTER, cell * 2, fs, 2, Color.BLACK)
+			draw_string(font, at, label, HORIZONTAL_ALIGNMENT_CENTER, cell * 2, fs, UiStyle.color("alert") if cash.failed else UiStyle.color("text"))
+			if bool(info.get("gate", false)):
+				draw_arc(Vector2(cell * 0.9, -cell * 0.12), cell * 0.12, 0, TAU, 20, accent, 2)
+				if bool(info.get("double", false)):
+					draw_arc(Vector2(cell * 1.2, -cell * 0.12), cell * 0.12, 0, TAU, 20, accent, 2)
+			draw_set_transform(Vector2.ZERO)
 
 
 func _enqueue(item: Dictionary) -> void:
@@ -471,6 +718,9 @@ func advance(delta: float) -> void:
 
 
 func _process(delta: float) -> void:
+	if die_ready:
+		_idle_time += delta
+		queue_redraw()
 	advance_building_fx(delta)
 	if not _item.is_empty():
 		advance(delta)
@@ -545,6 +795,21 @@ func piece_state(player_id: int) -> PieceState:
 		s.moving = true
 	s.visible = true
 	s.in_jail = controller.players[player_id].in_jail
+	var claim := fx_pose(&"claim_bar")
+	if claim.active and int(claim.info.player) == player_id:
+		s.lift = claim.lift
+		s.point.y -= cell * s.lift
+		s.moving = true
+	var anchor := anchor_pose()
+	if anchor.active and int(anchor.info.player) == player_id:
+		s.lift = anchor.lift
+		s.point.y -= cell * s.lift
+		s.moving = true
+	var victory := victory_pose()
+	if victory.active and int(victory.info.player) == player_id:
+		s.lift = victory.lift
+		s.point.y -= cell * s.lift
+		s.moving = true
 	if controller.players[player_id].is_bankrupt:
 		if _fading.has(player_id):
 			var f: Array = _fading[player_id]
@@ -742,7 +1007,15 @@ func _draw() -> void:
 			var owner_color := controller.players[s.deed.owner].color
 			if s.deed.is_mortgaged:
 				owner_color = owner_color.darkened(0.6)
-			draw_rect(Rect2(r.position + Vector2(cell * 0.06, cell * 0.8), Vector2(cell * 0.88, cell * 0.12)), owner_color)
+			var victory := victory_pose()
+			if victory.active and s.deed.owner == int(victory.info.player):
+				var source := piece_state(s.deed.owner).rest
+				var radius := br.size.length() * float(victory.sweep)
+				var flash := 1.0 - clampf(absf(source.distance_to(r.get_center()) - radius) / cell, 0, 1)
+				owner_color = owner_color.lerp(gold, flash)
+			var paint := fx_pose(&"claim_bar")
+			var share := float(paint.t) if paint.active and int(paint.info.space) == s.index else 1.0
+			draw_rect(Rect2(r.position + Vector2(cell * 0.06, cell * 0.8), Vector2(cell * 0.88 * share, cell * 0.12)), owner_color)
 			_draw_buildings(r, cell, s.deed)
 		if s.index == here:
 			draw_rect(r.grow(-1.0), controller.current_player().color, false, 2.0)
@@ -755,6 +1028,8 @@ func _draw() -> void:
 	_draw_building_fx(br, cell)
 	_draw_tokens(br, cell)
 	_draw_center(br, cell, font)
+	_draw_event_fx()
+	_draw_go_crossing()
 	_draw_land_card()
 
 
@@ -817,6 +1092,8 @@ func _moving_point(br: Rect2, cell: float) -> Array:
 	var p0 := token_point(br, cell, pid, i0)
 	var p1 := token_point(br, cell, pid, i0 + dir)
 	var lift2 := sin(PI * u2)
+	if posmod(i0, Board.SPACE_COUNT) == Board.SPACE_COUNT - 1 and dir > 0 and int(_item.get("salary", 0)) > 0:
+		lift2 *= UiStyle.num("go_hop_boost", 1.2)
 	return [p0.lerp(p1, smoothstep(0.0, 1.0, u2)) - Vector2(0, hop * lift2), lift2]
 
 
@@ -856,8 +1133,12 @@ func _draw_center(br: Rect2, cell: float, font: Font) -> void:
 	draw_string(font, Vector2(inner.position.x, y), String(ProjectSettings.get_setting("application/config/name", "")).to_upper(),
 			HORIZONTAL_ALIGNMENT_CENTER, inner.size.x, title_size, UiStyle.color("accent"))
 	y += font.get_descent(title_size)
+	var receipt := cash_fly_pose()
+	var underline := UiStyle.color("accent_dim")
+	if receipt.active:
+		underline = underline.lerp(UiStyle.color("accent"), receipt.receipt)
 	draw_line(Vector2(inner.get_center().x - cell * 1.5, y), Vector2(inner.get_center().x + cell * 1.5, y),
-			UiStyle.color("accent_dim"), 1.0)
+			underline, 1.0)
 	var look := dice_look()
 	var dice := dice_rect()
 	var face := dice.size.y
@@ -868,7 +1149,9 @@ func _draw_center(br: Rect2, cell: float, font: Font) -> void:
 		for die in range(2):
 			var pose := dice_pose(die)
 			draw_set_transform(pose.point, pose.rotation, pose.scale)
-			_draw_die(Rect2(-Vector2.ONE * face * 0.5, Vector2.ONE * face), faces.x if die == 0 else faces.y)
+			_draw_die(Rect2(-Vector2.ONE * face * 0.5, Vector2.ONE * face), faces.x if die == 0 else faces.y, pose.pip_scale)
+			if float(pose.glint) > 0.0:
+				draw_arc(Vector2.ZERO, face * 0.62, 0, TAU, 32, Color(_die_tint, pose.glint), 2.0)
 			draw_set_transform(Vector2.ZERO)
 		y = dice.end.y
 	y += font.get_height(title_size) * 0.4
@@ -896,7 +1179,8 @@ func _draw_center(br: Rect2, cell: float, font: Font) -> void:
 ## bottom edge.
 func _draw_die_ready(dice: Rect2, face: float, font: Font, body_size: int) -> float:
 	var hit := die_hit_rect()
-	UiStyle.flat_box(Color(_die_tint, 0.14), Color(_die_tint, 0.7), 1, int(minf(hit.size.y, hit.size.x) * 0.25), 0).draw(get_canvas_item(), hit)
+	var breathe := 0.65 + 0.15 * sin(TAU * _idle_time / UiStyle.num("dice_ready_period_seconds", 1.6))
+	UiStyle.flat_box(Color(_die_tint, 0.14), Color(_die_tint, breathe), 1, int(minf(hit.size.y, hit.size.x) * 0.25), 0).draw(get_canvas_item(), hit)
 	for x: float in [dice.position.x, dice.end.x - face]:
 		UiStyle.flat_box(UiStyle.color("dice_face"), _die_tint, maxi(2, int(face * 0.1)), int(face * 0.18), 0).draw(
 				get_canvas_item(), Rect2(x, dice.position.y, face, face))
@@ -907,12 +1191,12 @@ func _draw_die_ready(dice: Rect2, face: float, font: Font, body_size: int) -> fl
 
 
 ## One die face: rounded ivory square with dark pips (theme dice_face / dice_pip).
-func _draw_die(r: Rect2, value: int) -> void:
+func _draw_die(r: Rect2, value: int, pip_scale: float = 1.0) -> void:
 	var face := UiStyle.flat_box(UiStyle.color("dice_face"), UiStyle.color("accent"), 2, int(r.size.x * 0.18), 0)
 	face.draw(get_canvas_item(), r)
 	var step := r.size.x / 4.0
 	for p: Vector2i in PIPS.get(value, []):
-		draw_circle(r.position + Vector2(step * (p.x + 1), step * (p.y + 1)), r.size.x * 0.09, UiStyle.color("dice_pip"))
+		draw_circle(r.position + Vector2(step * (p.x + 1), step * (p.y + 1)), r.size.x * 0.09 * pip_scale, UiStyle.color("dice_pip"))
 
 
 ## Text lines describing a space for the center readout (empty for NO_SELECTION).
