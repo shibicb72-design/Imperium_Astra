@@ -8,12 +8,15 @@ var seat := 0
 var _cell := 30.0
 var _lift := 0.0
 var _alpha := 1.0
+## Jail look flag from PieceState (stored only; TODO Codex paints the bars).
+var _in_jail := false
 
 
 func apply_piece_state(state: BoardView.PieceState) -> void:
 	_cell = state.cell
 	_lift = state.lift
 	_alpha = state.alpha
+	_in_jail = state.in_jail
 	queue_redraw()
 
 

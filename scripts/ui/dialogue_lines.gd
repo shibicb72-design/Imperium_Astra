@@ -16,6 +16,7 @@ const FALLBACK := {
 	"auction_won": ["{name} wins {space} for {amount}."],
 	"auction_unsold": ["No bids for {space}."],
 	"rent_paid": ["{name} pays {owner} {amount}."],
+	"rent_owed": ["{name} owes {owner} {amount} and must raise funds."],
 	"tax": ["{name} pays {amount} tax."],
 	"card_chance": ["{text}"],
 	"card_community": ["{text}"],
@@ -90,8 +91,8 @@ static func describe(tc: TurnController, kind: StringName, info: Dictionary) -> 
 		&"passed_go", &"landed_unowned", &"bought", &"auction_won", &"auction_unsold", &"tax", &"bankrupt", \
 		&"trade_proposed", &"trade_accepted", &"trade_rejected", &"trade_countered", &"trade_withdrawn", &"game_over":
 			key = String(kind)
-		&"rent":
-			key = "rent_paid"
+		&"rent":  # paid false: the rent became a debt (rules unchanged; the banner stops saying "pays")
+			key = "rent_paid" if bool(info.get("paid", true)) else "rent_owed"
 		&"card":
 			vars["text"] = String(info.get("text", ""))
 			vars["deck"] = tc.board.term(String(info.get("deck", "")))

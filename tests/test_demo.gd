@@ -6,7 +6,7 @@ extends TestCase
 const P := TurnController.Phase
 const DIALOGUE_KEYS: Array[String] = [
 	"match_start", "roll", "roll_bot", "doubles", "passed_go", "landed_unowned", "bought",
-	"auction_won", "auction_unsold", "rent_paid", "tax", "card_chance", "card_community",
+	"auction_won", "auction_unsold", "rent_paid", "rent_owed", "tax", "card_chance", "card_community",
 	"jail_enter", "jail_exit_fine", "jail_exit_pardon", "jail_exit_doubles", "jail_exit_forced",
 	"bankrupt", "trade_proposed", "trade_accepted", "trade_rejected", "trade_countered",
 	"trade_withdrawn", "game_over",

@@ -24,6 +24,13 @@ extends Control
 ## bodies: pieces only follow. The queue stays the single sequencer; queue_move / queue_jump drive
 ## the shown board index and no rules state lives here. fade_out_piece() is the bankrupt-fade hook
 ## (presentation-only fading set; call it on the existing `bankrupt` game_event); rules never wait.
+## PieceState.in_jail mirrors the player's jail flag so a piece can paint its jail look.
+##
+## FX hooks (P5 structure hooks): queue_fx(kind, info, dur) queues a timed presentation item that
+## holds the same queue, so is_animating() stays the one busy signal (no second FX flag). fx_pose(kind)
+## is the pose table for the active fx: an identity stub for now (active, kind, t, info, neutral
+## scale / offset / rotation); the tile / event animations fill the poses later. Nothing in the
+## rules waits on an fx and no fx changes rules state.
 ##
 ## Die affordance (P5-FEEL Dig 5): while Main sets die_ready, the dice area shows a die-ready look
 ## (blank faces ringed in the seat colour, OPEN_QUESTIONS Q27) instead of the last-roll readout, so
@@ -66,6 +73,8 @@ class PieceState extends RefCounted:
 	var alpha := 1.0
 	## Board cell size, for scaling art to the board.
 	var cell := 0.0
+	## The player is in jail (jail look); from the rules state, never from the queue.
+	var in_jail := false
 
 var controller: TurnController = null
 var selected_index: int = NO_SELECTION
@@ -368,6 +377,27 @@ func queue_call(fn: Callable) -> void:
 	_enqueue({"type": &"call", "fn": fn, "dur": 0.0})
 
 
+## Timed presentation fx (`kind` names a pose in fx_pose; `info` carries ids and numbers from the
+## game_event) that holds the queue, and so is_animating(), for `dur` seconds. Instant when animate
+## is off or dur <= 0. Changes no rules state and no shown positions.
+func queue_fx(kind: StringName, info: Dictionary, dur: float) -> void:
+	_enqueue({"type": &"fx", "kind": kind, "info": info, "dur": maxf(0.0, dur)})
+
+
+## Pose for the fx of `kind` this frame. Identity stub: active only while that fx plays, t = its
+## 0..1 progress, info = what was queued; scale / offset / rotation are neutral until the
+## tile / event animations fill the table. Unknown kinds give the same neutral pose, inactive.
+func fx_pose(kind: StringName) -> Dictionary:
+	var pose := {"active": false, "kind": kind, "t": 0.0, "info": {}, "lift": 0.0, "scale": Vector2.ONE,
+		"offset": Vector2.ZERO, "rotation": 0.0}
+	if _item.is_empty() or _item["type"] != &"fx" or _item["kind"] != kind or not animate:
+		return pose
+	pose.active = true
+	pose.t = clampf(_t / maxf(float(_item["dur"]), 0.0001), 0.0, 1.0)
+	pose.info = _item["info"]
+	return pose
+
+
 func _enqueue(item: Dictionary) -> void:
 	if not animate or (not is_animating() and float(item["dur"]) <= 0.0):
 		_finish_item(item)
@@ -407,6 +437,8 @@ func _finish_item(item: Dictionary) -> void:
 			_shown_pos[int(item["player"])] = int(item["to"])
 		&"call":
 			(item["fn"] as Callable).call()
+		&"fx":
+			pass  # a pose-only hold; nothing to apply once it ends
 	queue_redraw()
 	update_pieces()
 
@@ -512,6 +544,7 @@ func piece_state(player_id: int) -> PieceState:
 		s.rest = s.point + Vector2(0, UiStyle.num("pawn_hop_height", 0.3) * cell * s.lift)
 		s.moving = true
 	s.visible = true
+	s.in_jail = controller.players[player_id].in_jail
 	if controller.players[player_id].is_bankrupt:
 		if _fading.has(player_id):
 			var f: Array = _fading[player_id]

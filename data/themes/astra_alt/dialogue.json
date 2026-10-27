@@ -30,6 +30,9 @@
     "rent_paid": [
       "Docking account: {name} sends {owner} {amount}."
     ],
+    "rent_owed": [
+      "Docking account overdrawn: {name} owes {owner} {amount}."
+    ],
     "tax": [
       "Fleet assessment: {name} pays {amount}."
     ],

@@ -12,6 +12,7 @@
     "auction_won": ["Sold! {space} to {name} for {amount}.", "The Forum falls silent: {name} takes {space} at {amount}."],
     "auction_unsold": ["No bids. {space} stays with the Treasury."],
     "rent_paid": ["{name} pays {owner} {amount} in tribute at {space}.", "Tribute! {owner} collects {amount} from {name}."],
+    "rent_owed": ["{name} owes {owner} {amount} in tribute at {space} and must raise it.", "{owner} demands {amount} from {name}; the coffers run short."],
     "tax": ["{space}: {name} pays {amount} to Rome.", "The publicani take {amount} from {name}."],
     "card_chance": ["Mission Brief: {text}"],
     "card_community": ["Senate Dispatch: {text}"],

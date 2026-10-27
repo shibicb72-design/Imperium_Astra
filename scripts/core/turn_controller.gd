@@ -27,11 +27,20 @@ extends RefCounted
 ##
 ## game_event(kind, info) is a presentation hook (pawn tweens, dice roll, dialogue banner). It
 ## carries ids and numbers only, never theme text; it changes no state. Kinds and info keys:
-## rolled {player, d1, d2, doubles}, moved {player, from, to, steps}, passed_go {player, amount},
-## landed_unowned {player, space, price}, bought {player, space, price}, rent {player, owner,
-## space, amount}, tax {player, space, amount}, card {player, space, deck, text}, jailed {player,
-## from, to}, released {player, how: fine|pardon|doubles|forced}, auction_won {player, space,
-## amount}, auction_unsold {space}, building_auction_won {player, space, kind, amount},
+## rolled {player, d1, d2, doubles, streak, [for]} (streak = doubles in a row counting this roll:
+## 0 when not doubles or thrown from jail, config.doubles_to_jail on the throw that jails; for:
+## &"utility" marks the extra throw a "pay 10x the dice" card asks for, doubles false, streak 0),
+## moved {player, from, to, steps}, passed_go {player, amount}, landed_unowned {player, space,
+## price}, landed {player, space, outcome: own|mortgaged|visiting|free_parking} (the landings
+## that change nothing), bought {player, space, price}, rent {player, owner, space, amount, paid}
+## (emitted after the charge; paid false when it became a debt), tax {player, space, amount},
+## card {player, space, deck, card_id, opcode, params, text} (params keeps numeric values only;
+## text is the banner contract), jailed {player, from, to}, jail_stay {player, tries} (a failed
+## doubles try in jail), released {player, how: fine|pardon|doubles|forced}, mortgaged /
+## unmortgaged {player, space, amount}, auction_bid {player, space, amount}, auction_pass {player,
+## space} (space -1 for a building lot), debt_started / debt_paid {player, creditor, amount}
+## (creditor PropertyDeed.BANK or a player id; debt_started mirrors the signal), auction_won
+## {player, space, amount}, auction_unsold {space}, building_auction_won {player, space, kind, amount},
 ## building_auction_unsold {kind}, built_house {player, space, houses, cost}, built_hotel {player,
 ## space, cost} (build or a won building lot), sold_house {player, space, count, houses, amount},
 ## sold_hotel {player, space, houses, amount} (houses = what stays on the street: 4 after a single
@@ -127,7 +136,8 @@ func roll() -> void:
 	dice.roll()
 	_extra_turn_pending = false
 	_say("%s rolled %d + %d." % [p.display_name, dice.d1, dice.d2])
-	_event(&"rolled", {"player": p.id, "d1": dice.d1, "d2": dice.d2, "doubles": dice.is_doubles()})
+	var streak := doubles_streak + 1 if dice.is_doubles() and not p.in_jail else 0
+	_event(&"rolled", {"player": p.id, "d1": dice.d1, "d2": dice.d2, "doubles": dice.is_doubles(), "streak": streak})
 	if p.in_jail:
 		_roll_in_jail(p)
 	elif dice.is_doubles() and doubles_streak + 1 >= config.doubles_to_jail:
@@ -202,6 +212,7 @@ func auction_bid(amount: int) -> bool:
 	if not auction.bid(bidder.id, amount, bidder.cash):
 		return false
 	_say("%s bids $%d." % [bidder.display_name, amount])
+	_event(&"auction_bid", {"player": bidder.id, "space": auction.space_index, "amount": amount})
 	_after_auction_step()
 	return true
 
@@ -214,6 +225,7 @@ func auction_pass() -> bool:
 	if not auction.pass_turn(bidder.id):
 		return false
 	_say("%s drops out." % bidder.display_name)
+	_event(&"auction_pass", {"player": bidder.id, "space": auction.space_index})
 	_after_auction_step()
 	return true
 
@@ -412,6 +424,7 @@ func mortgage(player_id: int, space_index: int) -> bool:
 	if value < 0:
 		return false
 	_say("%s mortgages %s for $%d." % [p.display_name, board.spaces[space_index].display_name, value])
+	_event(&"mortgaged", {"player": p.id, "space": space_index, "amount": value})
 	state_changed.emit()
 	return true
 
@@ -424,6 +437,7 @@ func unmortgage(player_id: int, space_index: int) -> bool:
 	if cost < 0:
 		return false
 	_say("%s lifts the mortgage on %s for $%d." % [p.display_name, board.spaces[space_index].display_name, cost])
+	_event(&"unmortgaged", {"player": p.id, "space": space_index, "amount": cost})
 	state_changed.emit()
 	return true
 
@@ -530,6 +544,7 @@ func pay_debt() -> bool:
 	pending_debts.pop_front()
 	_pay(debtor, debt.creditor, debt.amount)
 	_say("%s pays the $%d owed to %s." % [debtor.display_name, debt.amount, _creditor_name(debt.creditor)])
+	_event(&"debt_paid", {"player": debtor.id, "creditor": debt.creditor, "amount": debt.amount})
 	_continue()
 	return true
 
@@ -585,19 +600,22 @@ func declare_bankruptcy() -> bool:
 
 ## Payer owes `amount` to a player id or PropertyDeed.BANK. Paid at once when cash covers it and
 ## nothing older is owed; otherwise queued as a Debt (raise funds or go bankrupt, section 4.4).
-func _charge(payer: Player, creditor_id: int, amount: int) -> void:
+## Returns true when the cash changed hands at once (false for a queued debt or nothing owed).
+func _charge(payer: Player, creditor_id: int, amount: int) -> bool:
 	if amount <= 0 or payer.is_bankrupt:
-		return
+		return false
 	var owes_already := false
 	for d in pending_debts:
 		if d.debtor == payer.id:
 			owes_already = true
 	if payer.cash >= amount and not owes_already:
 		_pay(payer, creditor_id, amount)
-		return
+		return true
 	pending_debts.append(Bankruptcy.Debt.new(payer.id, creditor_id, amount))
 	_say("%s owes %s $%d and must raise funds." % [payer.display_name, _creditor_name(creditor_id), amount])
+	_event(&"debt_started", {"player": payer.id, "creditor": creditor_id, "amount": amount})
 	debt_started.emit(payer, creditor_id, amount)
+	return false
 
 
 func _pay(payer: Player, creditor_id: int, amount: int) -> void:
@@ -688,6 +706,7 @@ func _roll_in_jail(p: Player) -> void:
 		p.jail_turns_tried += 1
 		if p.jail_turns_tried < config.max_jail_turns:
 			_say("%s stays in %s." % [p.display_name, board.term("jail")])
+			_event(&"jail_stay", {"player": p.id, "tries": p.jail_turns_tried})
 			return
 		# 6.4: third failed try: pay the fine and move with this roll.
 		_charge(p, PropertyDeed.BANK, config.jail_fine)
@@ -718,6 +737,10 @@ func _resolve_space(p: Player, ctx: Dictionary) -> void:
 			if config.free_parking_jackpot:
 				push_warning("free_parking_jackpot is a house rule and is not implemented")
 			_say("%s rests at %s." % [p.display_name, s.display_name])
+			_event(&"landed", {"player": p.id, "space": s.index, "outcome": &"free_parking"})
+		Space.Type.JAIL_CORNER:
+			# Just Visiting: landing here never jails (only _send_to_jail does).
+			_event(&"landed", {"player": p.id, "space": s.index, "outcome": &"visiting"})
 		_:
 			pass
 
@@ -730,20 +753,26 @@ func _resolve_property(p: Player, s: Space, ctx: Dictionary) -> void:
 		_say("%s is %s: $%d." % [s.display_name, board.term("unowned"), deed.list_price])
 		_event(&"landed_unowned", {"player": p.id, "space": s.index, "price": deed.list_price})
 		return
-	if deed.owner == p.id or deed.is_mortgaged:
+	if deed.owner == p.id:
+		_event(&"landed", {"player": p.id, "space": s.index, "outcome": &"own"})
+		return
+	if deed.is_mortgaged:
+		_event(&"landed", {"player": p.id, "space": s.index, "outcome": &"mortgaged"})
 		return
 	var amount: int
 	if ctx.has("dice_multiplier"):
 		dice.roll()  # card says throw the dice for this utility rent
+		_event(&"rolled", {"player": p.id, "d1": dice.d1, "d2": dice.d2, "doubles": false, "streak": 0,
+				"for": &"utility"})
 		amount = dice.total() * int(ctx["dice_multiplier"])
 	else:
 		amount = Rules.rent_for(board, s.index, int(ctx.get("dice_total", 0)), config)
 		amount *= int(ctx.get("rent_multiplier", 1))
 	var owner := players[deed.owner]
 	_say("%s owes %s $%d rent." % [p.display_name, owner.display_name, amount])
-	_event(&"rent", {"player": p.id, "owner": owner.id, "space": s.index, "amount": amount})
 	rent_requested.emit(owner, p, amount)
-	_charge(p, owner.id, amount)
+	var paid := _charge(p, owner.id, amount)
+	_event(&"rent", {"player": p.id, "owner": owner.id, "space": s.index, "amount": amount, "paid": paid})
 
 
 func _draw_card(p: Player, deck: CardDeck) -> void:
@@ -752,7 +781,12 @@ func _draw_card(p: Player, deck: CardDeck) -> void:
 		return
 	last_card = card
 	_say("%s: %s" % [board.spaces[p.position].display_name, card.text])
-	_event(&"card", {"player": p.id, "space": p.position, "deck": card.deck_id, "text": card.text})
+	var params := {}  # numeric params only; string params (space_type) are rules-side, not FX
+	for k: String in card.params:
+		if typeof(card.params[k]) in [TYPE_INT, TYPE_FLOAT, TYPE_BOOL]:
+			params[k] = card.params[k]
+	_event(&"card", {"player": p.id, "space": p.position, "deck": card.deck_id, "card_id": card.card_id,
+			"opcode": card.opcode, "params": params, "text": card.text})
 	if card.is_goojf():
 		p.goojf_cards.append(card)
 	else:

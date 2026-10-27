@@ -228,3 +228,41 @@ func test_bankrupt_fade_hook() -> void:
 	check(tc.players[1].is_bankrupt, "rules state untouched")
 	bv.free()
 	done()
+
+
+## P5 structure hooks: mortgage / unmortgage are presentation events like build / sell (ids only).
+func test_feel_mortgage_events_ids_only() -> void:
+	var tc := _brown(0)
+	var ev := _record(tc)
+	check(tc.mortgage(0, 3), "mortgage")
+	check(tc.unmortgage(0, 3), "unmortgage")
+	var m := _of(ev, &"mortgaged")
+	var u := _of(ev, &"unmortgaged")
+	check_eq(m.size(), 1, "one mortgaged")
+	check_eq(u.size(), 1, "one unmortgaged")
+	if m.size() == 1:
+		check_eq(m[0][1]["amount"], tc.board.deed_at(3).mortgage_value, "mortgage value")
+		_check_ids_only(m[0][1], "mortgaged")
+	if u.size() == 1:
+		check(int(u[0][1]["amount"]) > int(m[0][1]["amount"]), "unmortgage costs value plus interest")
+		_check_ids_only(u[0][1], "unmortgaged")
+	done()
+
+
+## P5 structure hooks: the piece contract carries the jail look flag (no art required yet).
+func test_feel_piece_state_in_jail_flag() -> void:
+	var tc := GameSetup.new_game(1234)
+	var bv := BoardView.new()
+	bv.size = Vector2(440, 440)
+	bv.setup(tc)
+	var piece := SpacePiece.new()
+	bv.attach_piece(0, piece)
+	check_eq(bv.piece_state(0).get("in_jail"), false, "free piece")
+	tc.players[0].set_position(tc.config.jail_index)
+	tc.players[0].in_jail = true
+	bv.sync_to_game()
+	check_eq(bv.piece_state(0).get("in_jail"), true, "jailed piece reads the flag")
+	check_eq(piece.get("_in_jail"), true, "SpacePiece stores the flag from apply_piece_state")
+	check(not bv.piece_state(99).get("in_jail"), "unknown id: not jailed")
+	bv.free()
+	done()
