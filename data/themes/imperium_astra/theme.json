@@ -1,5 +1,5 @@
 {
-  "_doc": "Imperium Astra visual theme (presentation only; no rule numbers, no space_type / prices / rents / opcodes). Selected by data/ui.json theme_path. colors: hex strings read by UiStyle.color(). button / panel: StyleBoxFlat sizes in canvas units (about 1 dp). board: BoardView chrome; corner_colors keyed by the stable space_type name, corner_marks identify the original vector symbols drawn under the corner label. starfield: procedural backdrop (StarfieldBackground), deterministic from seed. Font sizes and touch sizes stay in data/ui.json.",
+  "_doc": "Imperium Astra visual theme (presentation only; no rule numbers, no space_type / prices / rents / opcodes). Selected by data/ui.json theme_path. colors: hex strings read by UiStyle.color(). button / panel: StyleBoxFlat sizes in canvas units (about 1 dp). board: BoardView chrome; corner_colors keyed by the stable space_type name, corner_marks identify the original vector symbols drawn under the corner label. starfield: procedural backdrop (StarfieldBackground), deterministic from seed. menu_background: main menu backdrop (MainMenuBackground) colors and motion; pan_speed in skyline tiles per second, parallax and ground (ground lines as height shares) per layer far..near, *_seconds loop periods, balloon_bob_height a height share. Font sizes and touch sizes stay in data/ui.json.",
   "id": "imperium_astra",
   "display_name": "Imperium Astra",
   "dialogue_path": "res://data/themes/imperium_astra/dialogue.json",
@@ -64,6 +64,33 @@
     "seed": 7,
     "max_radius": 1.6,
     "min_alpha": 0.25
+  },
+  "menu_background": {
+    "colors": {
+      "sky_top": "#1a2350",
+      "sky_bottom": "#6c6fa6",
+      "glow": "#e8c27a",
+      "planet": "#9aa3d6",
+      "far": "#5b6496",
+      "mid": "#3d4577",
+      "near": "#262c55",
+      "haze": "#9aa2d4",
+      "lights": "#ffd88a",
+      "cloud": "#e6e9ff",
+      "prop": "#cfd4ee",
+      "prop_light": "#ffcf6e"
+    },
+    "seed": 11,
+    "pan_speed": 0.004,
+    "parallax": [0.3, 0.6, 1.0],
+    "ground": [0.64, 0.72, 0.81],
+    "haze_alpha": 0.35,
+    "cloud_count": 5,
+    "cloud_speed": 0.006,
+    "barge_seconds": 80,
+    "balloon_drift_seconds": 140,
+    "balloon_bob_seconds": 6,
+    "balloon_bob_height": 0.014
   },
   "display_font_path": "res://assets/fonts/Orbitron.ttf"
 }

@@ -73,16 +73,39 @@ var _banner: DialogueBanner
 var _lines: DialogueLines
 var _setup_panel: SetupPanel
 var _starfield: StarfieldBackground
+var _main_menu: MainMenu
 
 
 func _ready() -> void:
 	if controller != null:
 		start(get_window())
 	else:
-		show_setup(get_window())
+		show_main_menu(get_window())
 
 
-## Seat setup first (OPEN_QUESTIONS Q19); its Start builds the match and opens the board.
+## Cold launch (MAIN_MENU_STARK): the main menu first; its PLAY opens the seat setup.
+func show_main_menu(window: Window) -> MainMenu:
+	if window != null:
+		_scale = DisplayScale.apply(window)
+	theme = UiStyle.make_theme()
+	var menu := MainMenu.new()
+	_main_menu = menu
+	menu.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(menu)
+	menu.setup(_scale)
+	UiFx.fade_in(menu)
+	menu.play_requested.connect(func() -> void:
+		if _main_menu != menu:
+			return  # already handed off
+		_main_menu = null
+		remove_child(menu)
+		menu.queue_free()
+		show_setup(window))
+	return menu
+
+
+## Seat setup (OPEN_QUESTIONS Q19), opened from the main menu's PLAY; its Start builds the match
+## and opens the board.
 func show_setup(window: Window) -> SetupPanel:
 	if window != null:
 		_scale = DisplayScale.apply(window)
@@ -103,8 +126,8 @@ func show_setup(window: Window) -> SetupPanel:
 
 
 ## Theme switch (P5-FEEL A4): selects registered pack `id` for this session and re-themes the
-## setup screen. Supported only before match start; returns false (no change) once the match
-## screen is built or for an unknown id.
+## pre-match screens (main menu backdrop, setup). Supported only before match start; returns false
+## (no change) once the match screen is built or for an unknown id.
 func select_theme(id: String) -> bool:
 	if _board_view != null:
 		push_warning("Main.select_theme: theme switch is only supported before match start")
@@ -115,11 +138,14 @@ func select_theme(id: String) -> bool:
 	return true
 
 
-## Re-applies the active pack to built UI: HUD Theme, dialogue lines, setup screen, starfield and
-## board chrome. Panels styled at build time on the match screen are not rebuilt (no mid-match swap).
+## Re-applies the active pack to built UI: HUD Theme, dialogue lines, main menu backdrop, setup
+## screen, starfield and board chrome. Panels styled at build time on the match screen are not
+## rebuilt (no mid-match swap).
 func apply_theme() -> void:
 	theme = UiStyle.make_theme()
 	_lines = DialogueLines.load_theme()
+	if _main_menu != null:
+		_main_menu.refresh_theme()
 	if _setup_panel != null:
 		_setup_panel.refresh_theme()
 	if _starfield != null:
