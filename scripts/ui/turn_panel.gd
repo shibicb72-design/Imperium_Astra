@@ -183,9 +183,11 @@ static func two_column_width() -> float:
 	return UiStyle.num("turn_panel_two_column_width", 288.0)
 
 
-## Where the panel floats, in the caller's coordinates (A1.5: the board never moves for it): the
-## free band after the board (below it in portrait, right of it in landscape) when it is wide and
-## tall enough, else the board center above the banner, else below it, so it stays clear of
+## Where the panel floats, in the caller's coordinates (A1.5: the board never moves for it), inside
+## `play`: Main passes the play area less the side panel's strip (Main.layout_rects), so the panel
+## never draws in the strip. First the free band after the board (below it in portrait, right of it
+## in landscape) when it is wide and tall enough, else the board center above the banner, else
+## below it, so it stays clear of
 ## `banner` whenever one of those fits. It never covers `avoid` (the live die's hit rect in the jail
 ## set; empty otherwise): an area holding it keeps only its part below it. When nothing fits, the
 ## bottom of the play area, below `avoid` even if that covers the banner. `height_one` /

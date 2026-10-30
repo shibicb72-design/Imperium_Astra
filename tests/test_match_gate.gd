@@ -535,8 +535,9 @@ func test_overlays_float_without_reflow() -> void:
 			main.size = s
 			main._update_layout()
 			var bm := main._board_view.custom_minimum_size
-			check_eq(bm.y if s.y > s.x else bm.x, Main.board_side_for(s - Vector2(16, 16)),
-					"board keeps its side under the %s overlay at %s" % [kind, s])
+			# 360x640: the SIDE_PANEL_A2 dock rule (data/ui.json side_dock_min_h) takes the board 344 -> 259.
+			var side := 259.0 if s == Vector2(360, 640) else Main.board_side_for(s - Vector2(16, 16))
+			check_eq(bm.y if s.y > s.x else bm.x, side, "board keeps its side under the %s overlay at %s" % [kind, s])
 			check(main.overlay_fits(), "%s overlay inside the play area, clear of the banner at %s" % [kind, s])
 		main.free()
 	done()

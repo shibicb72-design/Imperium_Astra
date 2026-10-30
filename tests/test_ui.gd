@@ -251,7 +251,9 @@ func test_main_pinned_rows_fit_short_portrait() -> void:
 		main.size = s
 		main._update_layout()
 		check(main.overlay_fits(), "answer overlay fits clear of the banner at %s" % s)
-		check_eq(main._board_view.custom_minimum_size.y, s.x - 16.0, "board keeps the full width at %s" % s)
+		# 360x640: the SIDE_PANEL_A2 dock rule (data/ui.json side_dock_min_h) takes the board 344 -> 259.
+		var side := 259.0 if s == Vector2(360, 640) else s.x - 16.0
+		check_eq(main._board_view.custom_minimum_size.y, side, "board keeps the full width at %s (360x640: the dock rule's 259)" % s)
 	main.toggle_tab(Main.Section.TRADE)
 	check(main.sections_open() and main._section == Main.Section.TRADE, "the open offer's Trade tab stays open while the answer waits")
 	check(not _inside_scroll(main._trade_panel._actions), "trade answers not in a scroll")
@@ -572,8 +574,10 @@ func test_main_overlay_docks_bottom_fold() -> void:
 		main.press_die()
 		check(main.press_slot(&"action") and main.sections_open(), "Action opens Holdings at %s" % s)
 		main._update_layout()
-		var play := main._play_rect()
-		var board := Rect2(play.position, Vector2.ONE * Main.board_side_for(play.size))
+		var lay := Main.layout_rects(main._play_rect(), main.controller.players.size(),
+				main._side_panel.full_min_size(), main._side_panel.compact_min_size())
+		var play: Rect2 = lay["play"]  # the floats' play: less the side panel's strip (SIDE_PANEL_A2)
+		var board: Rect2 = lay["board"]
 		var banner := BoardView.banner_rect_in(board)
 		var fold := s.x > 600.0
 		var r := Rect2(main._overlay.position, main._overlay.size)

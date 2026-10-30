@@ -1,9 +1,10 @@
 class_name SidePanel
 extends Control
 ## Per-seat side panel (P5 SIDE_PANEL_A1, Shibi GO Oct 29 2026): one SeatCard per seat, in seat
-## order, in a strip of the screen the panel owns (Main carves it out of the free band, A2; nothing
-## else draws there). Layout and state only: no Tween, AnimationPlayer, _process motion or UiFx call
-## here; the hooks below are instant setters that SIDE_PANEL_B_ANIM (Codex) animates in place.
+## order, in a strip of the screen the panel owns (Main.layout_rects reserves it at the play area's
+## far edge, SIDE_PANEL_A2; nothing else draws there). Layout and state only: no Tween,
+## AnimationPlayer, _process motion or UiFx call here; the hooks below are instant setters that
+## SIDE_PANEL_B_ANIM (Codex) animates in place.
 ##
 ## A card shows the seat's token (its SpacePiece, else a colour disc with the seat number) over its
 ## cash and, on a full card, a details column: name (ellipsis), deeds owned, net worth (NetWorth.of)
@@ -32,7 +33,10 @@ extends Control
 ##   clip_contents off, for floating popups) and glow_frame (Panel with its own StyleBoxFlat in the
 ##   seat colour, carrying the static active border; border widths never change at run time). The
 ##   badge and number Labels are persistent (one per badge key, toggled by set_badges).
-## - SeatCard.money_text(value): the cash and net worth figure ("$1500").
+## - SeatCard.money_text(value): the cash figure on a full card ("$1500"); SeatCard.short_money_text
+##   (value): the cash on a compact card and the net worth ("$12.5k" above side_money_sample);
+##   SeatCard.cash_text(value): the card's cash form for its mode now. Switching between compact and
+##   full re-renders the cash from last_cash (fit(), only on a switch).
 ## - Cards are built once in setup() and never freed or rebuilt during the match; their content
 ##   changes only through the hooks (name and badge words are set once at build).
 
@@ -43,7 +47,7 @@ const BADGE_KEYS: Array[String] = ["jail", "bankrupt", "pardon", "bot"]
 ## The word before the net worth figure. TODO(Q-networth-label): `_placeholder`, the dig's neutral word.
 const WORTH_LABEL_PLACEHOLDER := "worth"
 
-## Set by Main like BoardView.animate (A2); A1 never reads it.
+## Set by Main with BoardView.animate (Main.start); the A1 / A2 hooks never read it.
 var animate := false
 ## One card per seat, in seat order (index = player id).
 var cards: Array[SeatCard] = []
@@ -159,6 +163,23 @@ class SeatCard extends Control:
 	static func money_text(value: int) -> String:
 		return "$%d" % value
 
+	## The short figure (Shibi Oct 29 2026, 7:20 PM): money_text up to data/ui.json side_money_sample
+	## (the figure cards are measured with), else three significant digits truncated toward zero
+	## (never more than the seat holds), "k" below 1000000 and "M" from it, trailing zeros after the
+	## point dropped: 10000 "$10k", 12500 "$12.5k", 99999 "$99.9k", 100000 "$100k", 125000 "$125k",
+	## 999999 "$999k", 1000000 "$1M", 1250000 "$1.25M". Each at most side_card_min_size wide at
+	## font_small, so it fits a compact card. Compact cards show their cash this way, full cards
+	## their net worth.
+	static func short_money_text(value: int) -> String:
+		if value <= int(UiStyle.num("side_money_sample", 9999.0)) or value < 1000:
+			return money_text(value)
+		var digits := str(value)
+		var unit := 6 if value >= 1000000 else 3
+		var whole := digits.length() - unit
+		var sig := digits.left(maxi(3, whole))
+		var frac := sig.substr(whole).rstrip("0")
+		return "$" + sig.left(whole) + ("." + frac if frac != "" else "") + ("M" if unit == 6 else "k")
+
 	## Deeds owned, in the chips' words (main.gd:715).
 	static func owned_text(count: int) -> String:
 		return "%d deed%s" % [count, "" if count == 1 else "s"]
@@ -218,7 +239,7 @@ class SeatCard extends Control:
 	func set_cash(value: int, delta: int) -> void:
 		last_cash = value
 		last_cash_delta = delta
-		cash_label.text = money_text(value)
+		cash_label.text = cash_text(value)
 		_place_cash()
 
 	func set_owned(value: int, delta: int) -> void:
@@ -227,11 +248,16 @@ class SeatCard extends Control:
 		owned_label.text = owned_text(value)
 
 	func set_net_worth(value: int) -> void:
-		worth_label.text = money_text(value)
+		worth_label.text = short_money_text(value)
 		_place_worth()
 
 	func set_active(on: bool) -> void:
 		glow_frame.visible = on
+
+	## The cash figure for `value` in this card's mode now: short_money_text on a compact card, else
+	## money_text.
+	func cash_text(value: int) -> String:
+		return short_money_text(value) if compact else money_text(value)
 
 	func set_badges(flags: Dictionary) -> void:
 		var held := int(flags.get("pardon", 0))
@@ -258,6 +284,7 @@ class SeatCard extends Control:
 	## Sizes the card and places its nodes: the token over the cash (centred on a compact card, at
 	## the left of a full one), then the details column; layers cover the whole card.
 	func fit(card_size: Vector2, compact_mode: bool) -> void:
+		var switched := compact_mode != compact
 		compact = compact_mode
 		size = card_size
 		for layer: Control in [background, glow_frame, fx_layer]:
@@ -274,6 +301,8 @@ class SeatCard extends Control:
 		token.position = Vector2(x + floorf((block.x - t) * 0.5), y)
 		token.fit(t)
 		_cash_slot = Rect2(x, y + t + gap, block.x, h)
+		if switched:  # only then: a layout pass in the same mode keeps a tick's text
+			cash_label.text = cash_text(last_cash)
 		_place_cash()
 		details.visible = not compact_mode
 		if compact_mode:

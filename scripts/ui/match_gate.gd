@@ -7,7 +7,8 @@ extends RefCounted
 ## once the board queue drains) and every press handler checks it again at press time, so nothing
 ## waits on a signal alone. These are presentation states only: TurnController.Phase is unchanged.
 ##
-## Settled table (OPEN_QUESTIONS Q23-Q28 placeholders; bots play behind a chrome-free board):
+## Settled table (OPEN_QUESTIONS Q23-Q28 placeholders; bots play behind the board and the side
+## panel only, which shows in every state but GAME_OVER, Q35):
 ## - BUSY: dice tumbling or a piece moving (rolling / moving): board only, die and panel inert.
 ## - AWAIT_DIE_TAP: a person's AWAITING_ROLL, not jailed (also between doubles rolls, Q26): die only.
 ## - JAIL_SET: a jailed person's AWAITING_ROLL: name + Pay fine / Use pardon / Action, and the die

@@ -2,13 +2,22 @@ class_name Main
 extends Control
 ## Local hotseat match screen, board-first (P5-FEEL Dig 5). MatchGate decides what shows, from the
 ## rules state and whether the board is still moving: while a person waits to roll, while the dice
-## roll and while a piece moves, the play surface is the full board (it takes the full short side
-## of the play area) and the die-ready look in its center is the roll affordance (die_pressed).
+## roll and while a piece moves, the play surface is the board (the full short side of the play
+## area, but where the side panel's strip or the bottom dock needs room: layout_rects) and the
+## die-ready look in its center is the roll affordance (die_pressed).
 ## Once the board settles, the floating TurnPanel shows the deciding seat's name and options (Buy /
 ## Skip / Action / End Turn, or the jail set before the roll); it never resizes the board. Bot turns
-## stay chrome-free. One canvas unit is about 1 dp on mobile (DisplayScale). Input comes from
-## touch/mouse buttons or InputMap actions only (roll_dice, buy_property, end_turn), all through the
-## same gated handlers as the die and the panel.
+## show the board and the side panel only. One canvas unit is about 1 dp on mobile (DisplayScale).
+## Input comes from touch/mouse buttons or InputMap actions only (roll_dice, buy_property,
+## end_turn), all through the same gated handlers as the die and the panel.
+##
+## Side panel (P5 SIDE_PANEL_A2, Shibi Oct 29 2026): one SidePanel card per seat (token and cash; on
+## full cards also name, deeds, net worth and badges) in a strip of its own at the play area's far
+## edge (the bottom in portrait, the right in landscape; layout_rects) that nothing else draws in:
+## the turn panel and the overlay are placed in the play area less the strip, so the panel never
+## hides or shrinks under them. It shows on every turn, bot turns included, and while the board
+## moves; at game over it hides and its strip stays empty (no reflow). Its values come from
+## _refresh, queued behind the board's motion; display-only (it ignores the mouse).
 ##
 ## Board overlay (Dig 5a2): while a person owes a forced input (auction bid, debt, trade answer) or
 ## opened Action, one opaque overlay floats over the board (overlay_rect_for: the free band after
@@ -54,6 +63,10 @@ var _player_labels: Array[Label] = []
 var _status_label: Label
 ## Post-move / jail options floating over the screen (MatchGate panel states and game over).
 var _turn_panel: TurnPanel
+## Per-seat cards in their own strip (layout_rects): a child of Main outside every container.
+var _side_panel: SidePanel
+## Whether Main last asked the side panel to show (set_panel_shown is called only on a change).
+var _side_panel_shown := true
 ## Action view (OPEN_QUESTIONS Q24): Holdings / Trade / Log opened from the panel; Done closes it.
 var _action_open := false
 var _done_button: Button
@@ -189,6 +202,7 @@ func start(window: Window) -> void:
 	controller.doubles_extra_turn.connect(func(p: Player) -> void:
 		_say_later(_lines.line("doubles", {"name": p.display_name}), p.color))
 	_board_view.animate = is_inside_tree()
+	_side_panel.animate = _board_view.animate
 	_board_view.animation_finished.connect(_refresh, CONNECT_DEFERRED)
 	_board_view.die_pressed.connect(press_die)
 	_board_view.item_rect_changed.connect(_place_turn_panel)
@@ -281,9 +295,87 @@ func action_open() -> bool:
 	return _action_open
 
 
-## Board side for the play area: the full short side, whatever floats over it (A1.5).
+## Board side for the play area: the full short side, whatever floats over it (A1.5). layout_rects
+## starts from it and gives up only what the side panel's strip or the bottom dock needs (A2).
 static func board_side_for(avail: Vector2) -> float:
 	return minf(avail.x, avail.y)
+
+
+## The match screen's rects for `play` (P5 SIDE_PANEL_A2; pure, so the placement and the tests share
+## it), in play's coordinates, from play, the seat count and the side panel's card minimums alone
+## (never a float's need or the gate state):
+## - "board": the square at play's top-left, board_side_for(play) but in the two cases below;
+## - "band": the free band after that board in the whole play area (below it in portrait, right of
+##   it in landscape), before the strip is carved out of it;
+## - "strip": the side panel's own strip at play's far edge, across its whole length (the bottom T in
+##   portrait, the right T in landscape); Rect2() where it cannot hold every seat's compact card
+##   (then nothing is carved: the board-first layout as before);
+## - "play": play less the strip, where the turn panel and the overlay float, so neither draws in it.
+## Orientation always comes from the whole play area. T holds full cards (the full minimum across
+## plus side_strip_pad each side) where the band B (play's long side less the board side) is that
+## deep, full cards fit along it and B less T and the screen margins still leaves the floats
+## side_strip_full_keep_h (portrait) / side_strip_full_keep_w (landscape); else compact cards (the
+## compact minimum, at least side_card_min_size, plus the pads). The board shrinks, still square at
+## the top-left, only (1) where B is thinner than the strip, by the difference, and (2) in portrait
+## (Shibi Oct 30 2026) where the open bottom dock in the returned play (overlay_rect_for: from the
+## dialogue banner's top to the play bottom, less the margins; while that play is still portrait,
+## as docks_at_bottom asks) would be shorter than side_dock_min_h: by the smallest whole amount
+## that gives the dock that height, the board giving up whatever it needs, or not at all where even
+## no board would (OPEN_QUESTIONS Q38).
+static func layout_rects(play: Rect2, seats: int, full_min: Vector2, compact_min: Vector2) -> Dictionary:
+	var m := UiStyle.num("screen_margin", 8.0)
+	var pad := UiStyle.num("side_strip_pad", 4.0)
+	var lo := Vector2.ONE * UiStyle.num("side_card_min_size", 50.0)
+	full_min = full_min.max(lo)
+	compact_min = compact_min.max(lo)
+	var portrait := play.size.y > play.size.x
+	var side := board_side_for(play.size)
+	var b := (play.size.y if portrait else play.size.x) - side
+	var full_t := (full_min.y if portrait else full_min.x) + 2.0 * pad
+	var t := (compact_min.y if portrait else compact_min.x) + 2.0 * pad
+	var keep := UiStyle.num("side_strip_full_keep_h", 250.0) if portrait else UiStyle.num("side_strip_full_keep_w", 400.0)
+	if b >= full_t and b - full_t - 2.0 * m >= keep and SidePanel.layout_for(
+			_far_strip(play, full_t, portrait).grow(-pad), seats, full_min, compact_min).mode == SidePanel.Mode.FULL:
+		t = full_t
+	var strip := _far_strip(play, t, portrait)
+	var rest := play
+	if SidePanel.layout_for(strip.grow(-pad), seats, full_min, compact_min).mode == SidePanel.Mode.HIDDEN:
+		strip = Rect2()
+	else:
+		rest = Rect2(play.position, play.size - (Vector2(0, t) if portrait else Vector2(t, 0)))
+		side -= maxf(t - b, 0.0)
+		if portrait and rest.size.y > rest.size.x:
+			side = _side_for_dock(rest, side)
+	var board := Rect2(play.position, Vector2.ONE * side)
+	var band := Rect2(board.end.x, play.position.y, play.end.x - board.end.x, play.size.y)
+	if portrait:
+		band = Rect2(play.position.x, board.end.y, play.size.x, play.end.y - board.end.y)
+	return {"board": board, "band": band, "strip": strip, "play": rest}
+
+
+## The `t`-deep strip along play's far edge: the bottom in portrait, the right in landscape.
+static func _far_strip(play: Rect2, t: float, portrait: bool) -> Rect2:
+	if portrait:
+		return Rect2(play.position.x, play.end.y - t, play.size.x, t)
+	return Rect2(play.end.x - t, play.position.y, t, play.size.y)
+
+
+## layout_rects' dock rule: the board side, at most `side`, at `rest`'s top-left whose open bottom
+## dock in `rest` (from the banner's top to rest's bottom, less the screen margins) is at least
+## side_dock_min_h; the largest whole one where `side` is too big, `side` itself where it already
+## does or where even no board would.
+static func _side_for_dock(rest: Rect2, side: float) -> float:
+	var m := UiStyle.num("screen_margin", 8.0)
+	var need := UiStyle.num("side_dock_min_h", 436.0)
+	var dock := func(s: float) -> float:
+		return rest.end.y - BoardView.banner_rect_in(Rect2(rest.position, Vector2.ONE * s)).position.y - 2.0 * m
+	if dock.call(side) >= need or dock.call(0.0) < need:
+		return side
+	var per := BoardView.banner_rect_in(Rect2(0, 0, 1, 1)).position.y  # banner top per unit of side
+	var s := minf(floorf((rest.size.y - 2.0 * m - need) / per), side)
+	while s > 0.0 and dock.call(s) < need:
+		s -= 1.0
+	return s
 
 
 ## Q22 1B (Shibi, Oct 26 2026), the one exception to keeping the overlay clear of the dialogue
@@ -296,17 +388,18 @@ static func docks_at_bottom(play: Rect2, board: Rect2, need: Vector2) -> bool:
 			and play.end.y - board.end.y - 2.0 * UiStyle.num("screen_margin", 8.0) < need.y
 
 
-## Where the board overlay floats, in the caller's coordinates (A1.5: the board never moves for it).
-## Candidates in order: the free band after the board (below it in portrait, right of it in
-## landscape); in portrait where that band is shorter than need.y (docks_at_bottom), the bottom
-## dock: closed, need.y high at the bottom of the play width below the dialogue `banner`; open
-## (`fill`), from the banner's top to the play bottom, over the banner; then the play width above
-## the banner, then below it. It takes the first that is at least `need` (the overlay's minimum
-## size; width also at least data/ui.json overlay_min_width), else the tallest wide enough of the
-## band and the two banner areas, so the banner line stays readable and never takes the overlay's
-## presses. `fill`: the area's full height (its sections are open), else need.y, centered (at the
-## dock's bottom when docked). Width: at most overlay_max_width. With no candidate wide enough
-## (tiny windows), the whole play area.
+## Where the board overlay floats, in the caller's coordinates (A1.5: the board never moves for it),
+## inside `play`: Main passes the play area less the side panel's strip (layout_rects), so the
+## overlay never draws in the strip. Candidates in order: the free band after the board (below it
+## in portrait, right of it in landscape); in portrait where that band is shorter than need.y
+## (docks_at_bottom), the bottom dock: closed, need.y high at the bottom of the play width below
+## the dialogue `banner`; open (`fill`), from the banner's top to the play bottom, over the banner;
+## then the play width above the banner, then below it. It takes the first that is at least `need`
+## (the overlay's minimum size; width also at least data/ui.json overlay_min_width), else the
+## tallest wide enough of the band and the two banner areas, so the banner line stays readable and
+## never takes the overlay's presses. `fill`: the area's full height (its sections are open), else
+## need.y, centered (at the dock's bottom when docked). Width: at most overlay_max_width. With no
+## candidate wide enough (tiny windows), the whole play area.
 static func overlay_rect_for(play: Rect2, board: Rect2, banner: Rect2, need: Vector2, fill: bool) -> Rect2:
 	var pad := UiStyle.num("screen_margin", 8.0)
 	var min_w := maxf(need.x, UiStyle.num("overlay_min_width", 256.0))
@@ -363,6 +456,14 @@ func _build_ui() -> void:
 	_board_view.add_child(_banner)  # floats over the board center; never changes the layout
 	_board_view.resized.connect(_place_banner)
 	_banner.line_shown.connect(_place_banner.unbind(1))  # each line re-sizes the toast
+
+	# The side panel (P5 SIDE_PANEL_A2): a child of Main, not of _box, in its own strip at the play
+	# area's far edge (layout_rects) that nothing else draws in. Set up here, inside Main, so its cards
+	# take the HUD's label font; once per match (its cards are never rebuilt).
+	_side_panel = SidePanel.new()
+	_side_panel.name = "SidePanel"
+	add_child(_side_panel)
+	_side_panel.setup(controller)
 
 	# The board overlay: a child of Main, not of _box, so showing or hiding it never reflows the
 	# board; an opaque card that takes the presses over the board area it covers.
@@ -517,8 +618,16 @@ func _play_rect() -> Rect2:
 	return Rect2(origin, size - origin - Vector2(_insets.z + m, _insets.w + m))
 
 
-## Board-first: the board always takes the full short side (top in portrait, left in landscape);
-## the turn panel and the overlay float in the free band or over it and never resize it.
+## layout_rects for the play area now, the seat count and the side panel's card minimums.
+func _layout() -> Dictionary:
+	return layout_rects(_play_rect(), _side_panel.cards.size(), _side_panel.full_min_size(),
+			_side_panel.compact_min_size())
+
+
+## Board-first: the board takes the full short side (top in portrait, left in landscape) but where
+## the side panel's strip or the bottom dock needs room (layout_rects), square at the play area's
+## top-left; the side panel sits in its own strip; the turn panel and the overlay float in the play
+## area less that strip, in the free band or over the board, and never resize it.
 func _update_layout() -> void:
 	if _box == null:
 		return
@@ -526,14 +635,35 @@ func _update_layout() -> void:
 	var avail := _play_rect().size
 	var portrait := avail.y > avail.x
 	_box.vertical = portrait
-	var board_side := board_side_for(avail)
-	_board_view.custom_minimum_size = Vector2(0, board_side) if portrait else Vector2(board_side, 0)
+	var lay := _layout()
+	var board: Rect2 = lay["board"]
+	var strip: Rect2 = lay["strip"]
+	# The view is the board square both ways and only its own size across the box: BoardView centres
+	# its square in the view, so a wider view would move a shrunk board off the top-left.
+	_board_view.custom_minimum_size = board.size.max(Vector2.ZERO)
+	_board_view.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN if portrait else Control.SIZE_FILL
+	_board_view.size_flags_vertical = Control.SIZE_FILL if portrait else Control.SIZE_SHRINK_BEGIN
+	_place_side_panel(strip)
 	_place_turn_panel()
 	_place_overlay()
 
 
+## Places the side panel at once in its strip, less side_strip_pad, and shows it unless the strip
+## cannot hold its cards or the match is over (MatchGate GAME_OVER: the strip stays carved and
+## empty, so nothing reflows). set_panel_shown only on a change (SIDE_PANEL_B_ANIM animates each).
+func _place_side_panel(strip: Rect2) -> void:
+	var placed := Rect2()
+	if strip.has_area():
+		placed = _side_panel.place_in(strip.grow(-UiStyle.num("side_strip_pad", 4.0)))
+	var shown := placed.has_area() and gate() != MatchGate.State.GAME_OVER
+	if shown != _side_panel_shown:
+		_side_panel_shown = shown
+		_side_panel.set_panel_shown(shown)
+
+
 ## Floats the turn panel without moving the board (TurnPanel.rect_for: free band after the board,
-## else the board center clear of the dialogue banner).
+## else the board center clear of the dialogue banner), in the play area less the side panel's
+## strip (layout_rects).
 func _place_turn_panel() -> void:
 	if _turn_panel == null or not _turn_panel.visible:
 		return
@@ -542,29 +672,33 @@ func _place_turn_panel() -> void:
 	var banner := _board_view.banner_rect()
 	var die := Rect2(offset + _board_view.die_hit_rect().position, _board_view.die_hit_rect().size) \
 			if _board_view.die_ready else Rect2()
-	var r := TurnPanel.rect_for(_play_rect(), Rect2(offset + board.position, board.size),
+	var play: Rect2 = _layout()["play"]
+	var r := TurnPanel.rect_for(play, Rect2(offset + board.position, board.size),
 			Rect2(offset + banner.position, banner.size), _turn_panel.height_for(1), _turn_panel.height_for(2), die)
 	_turn_panel.set_columns(2 if r.size.x >= TurnPanel.two_column_width() else 1)
 	_turn_panel.position = r.position
 	_turn_panel.size = r.size
 
 
-## The overlay's rect (Main-local) for its current content, from the board-first geometry alone (the
-## board square at the play area's top-left, its dialogue banner), so it holds outside the tree too.
+## The overlay's rect (Main-local) for its current content, from the board-first geometry alone
+## (layout_rects: the play area less the side panel's strip, the board square at its top-left, its
+## dialogue banner), so it holds outside the tree too.
 func _overlay_rect() -> Rect2:
-	var play := _play_rect()
-	var board := Rect2(play.position, Vector2.ONE * board_side_for(play.size))
+	var lay := _layout()
+	var play: Rect2 = lay["play"]
+	var board: Rect2 = lay["board"]
 	return overlay_rect_for(play, board, BoardView.banner_rect_in(board),
 			_overlay.get_combined_minimum_size(), _sections_open)
 
 
 ## Floats the overlay without moving the board (overlay_rect_for). First the trade pickers stack
-## where one row would not fit the widest overlay (the play width less its pad and the overlay and
-## section margins), so they never crowd or clip (Q21, Fold cover).
+## where one row would not fit the widest overlay (the play width, less the side panel's strip,
+## less its pad and the overlay and section margins), so they never crowd or clip (Q21, Fold cover).
 func _place_overlay() -> void:
 	if _overlay == null or not _overlay.visible:
 		return
-	var room := _play_rect().size.x - 2.0 * UiStyle.num("screen_margin", 8.0) \
+	var play: Rect2 = _layout()["play"]
+	var room := play.size.x - 2.0 * UiStyle.num("screen_margin", 8.0) \
 			- _overlay.get_theme_stylebox("panel").get_minimum_size().x \
 			- _section_holder.get_theme_stylebox("panel").get_minimum_size().x
 	_trade_panel.set_stacked(_trade_panel.picker_row_width() > room)
@@ -574,14 +708,16 @@ func _place_overlay() -> void:
 
 
 ## True when the open overlay, as placed (its applied position and size), lies inside the play area
-## at its full minimum size, clear of the dialogue banner unless it docks over it with its sections
-## open (docks_at_bottom, Q22 1B) (tests: pinned answer rows stay on screen). Nothing to fit while
-## it is hidden.
+## less the side panel's strip at its full minimum size, clear of the dialogue banner unless it
+## docks over it with its sections open (docks_at_bottom, Q22 1B) (tests: pinned answer rows stay
+## on screen). The same play and board as the placement (layout_rects). Nothing to fit while it is
+## hidden.
 func overlay_fits() -> bool:
 	if not _overlay.visible:
 		return true
-	var play := _play_rect()
-	var board := Rect2(play.position, Vector2.ONE * board_side_for(play.size))
+	var lay := _layout()
+	var play: Rect2 = lay["play"]
+	var board: Rect2 = lay["board"]
 	var r := Rect2(_overlay.position, _overlay.size)
 	var need := _overlay.get_combined_minimum_size()
 	return play.encloses(r) and r.size.x + 0.5 >= need.x and r.size.y + 0.5 >= need.y \
@@ -795,6 +931,9 @@ func _refresh() -> void:
 	_done_button.visible = _action_open
 	_board_view.set_die_ready(MatchGate.die_live(state) and not _action_open, p.color)
 	_turn_panel.refresh(state, _action_open, _board_view.animate)
+	# Side panel values once everything the board has queued so far has played (dice, hops, cash
+	# flies); at once when it is idle or animate is off. A bound method, not a lambda (see start()).
+	_board_view.queue_call(_side_panel.show_values.bind(controller))
 	_auction_panel.refresh()
 	_debt_panel.refresh()
 	_holdings_panel.refresh()

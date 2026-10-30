@@ -1,6 +1,6 @@
 extends TestCase
 ## P5 SIDE_PANEL_A1: the per-seat side panel (scripts/ui/side_panel.gd) and NetWorth
-## (scripts/core/net_worth.gd); layout and state only, no animation, not in Main yet (A2 wires it).
+## (scripts/core/net_worth.gd); layout and state only, no animation (Main: tests/test_side_panel_main.gd).
 ## seat_view and NetWorth on rules-built fixtures against literal numbers worked out by hand from
 ## data/board.json and data/rules.json; the active seat across end_turn; the cards inside their own
 ## strip (SidePanel.layout_for / rect_for: one row or one column, full, compact or hidden, never below
@@ -58,17 +58,16 @@ func _sorted_keys(d: Dictionary) -> Array:
 	return keys
 
 
-## The free band after the board, less screen_margin, as overlay_rect_for computes it
-## (main.gd:321-323): below the board in portrait, right of it otherwise. `insets` as
-## DisplayScale.safe_insets (left, top, right, bottom).
+## The free band after the board, less screen_margin: Main.layout_rects's band (the one function
+## Main's strip carve uses), below the board in portrait, right of it otherwise, before the strip is
+## carved. `insets` as DisplayScale.safe_insets (left, top, right, bottom). Two seats and the
+## Commander minimums: the band follows them only where the dock rule moves the board, and at these
+## sizes that rule (360x640) moves it the same for every seat count and pack.
 func _band(s: Vector2, insets: Vector4 = Vector4.ZERO) -> Rect2:
 	var m := UiStyle.num("screen_margin", 8.0)
 	var origin := Vector2(insets.x + m, insets.y + m)
 	var play := Rect2(origin, s - origin - Vector2(insets.z + m, insets.w + m))
-	var board := Rect2(play.position, Vector2.ONE * Main.board_side_for(play.size))
-	var band := Rect2(board.end.x, play.position.y, play.end.x - board.end.x, play.size.y)
-	if play.size.y > play.size.x:
-		band = Rect2(play.position.x, board.end.y, play.size.x, play.end.y - board.end.y)
+	var band: Rect2 = Main.layout_rects(play, 2, Vector2(150, 94), Vector2(50, 50))["band"]
 	return band.grow(-m)
 
 
@@ -377,7 +376,7 @@ func _pinned_layout_cases(id: String) -> int:
 	var band_modes: Array[Array] = [
 		[F, F, F, C, C],  # 411x880: band 379x453, one column 200 wide: 120 / 120 / 110 / 87 / 72 tall
 		[F, C, C, C, C],  # 411x731: band 379x304, one row 120 deep: 187 / 123 / 91 / 72 / 59 wide
-		[F, C, C, C, C],  # 360x640: band 328x264, one row: 162 / 106 / 79 / 62 / 51 wide
+		[F, F, C, C, C],  # 360x640: band 328x349 (A2 dock rule board 259, side_dock_min_h 436; 264 at 344), one column (taller than wide): 3 seats now full
 		[C, C, C, C, C],  # 875x971: band 843x80, 80 deep, below the full 94
 		[C, C, C, C, C],  # 820x910: band 788x74
 		[F, F, C, C, C],  # 898x395: band 487x363, one row: 200 / 159 / 118 / 94 / 77 wide
@@ -561,12 +560,12 @@ func test_card_min_sizes_and_contents() -> void:
 	check_eq(bot.size.x, w.call(bot.text), "the shorter badge stays whole")
 	check_eq(jail.size.x, room - UiStyle.num("side_column_gap", 6.0) - w.call(bot.text), "the longer badge takes the rest")
 	check(jail.position.x + jail.size.x <= bot.position.x and bot.position.x + bot.size.x <= room, "jail then bot, inside the line")
-	# A figure wider than side_money_sample ($10000, 48 wide) still shows whole on the 50-unit compact
-	# card, centred under the token (it runs into the inset, never off the card).
+	# A figure wider than side_money_sample shows short on the 50-unit compact card (SIDE_PANEL_A2,
+	# Shibi Oct 29 2026 7:20 PM: "$10k", not A1's 48-wide "$10000"), whole, centred under the token.
 	panel.place_in(Rect2(Vector2.ZERO, Vector2(6.0 * compact.x + 5.0 * gap, compact.y)))
 	c0.set_cash(10000, 0)
 	var big := _rect(c0.cash_label)
-	check(big.size.x >= w.call("$10000"), "five-digit figure whole (%s)" % big)
+	check(c0.cash_label.text == "$10k" and big.size.x >= w.call("$10k"), "five-digit figure short and whole (%s)" % big)
 	check(absf(big.get_center().x - _rect(c0.token).get_center().x) <= 0.5, "centred under the token")
 	check(Rect2(Vector2.ZERO, c0.size).encloses(big), "still on the card (%s)" % big)
 	panel.free()
