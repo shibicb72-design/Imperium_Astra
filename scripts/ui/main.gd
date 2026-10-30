@@ -650,7 +650,8 @@ func _update_layout() -> void:
 
 ## Places the side panel at once in its strip, less side_strip_pad, and shows it unless the strip
 ## cannot hold its cards or the match is over (MatchGate GAME_OVER: the strip stays carved and
-## empty, so nothing reflows). set_panel_shown only on a change (SIDE_PANEL_B_ANIM animates each).
+## empty, so nothing reflows). set_panel_shown only on a change; visibility is instant and hiding
+## finishes the panel's independent presentation motion (SIDE_PANEL_B_ANIM).
 func _place_side_panel(strip: Rect2) -> void:
 	var placed := Rect2()
 	if strip.has_area():

@@ -1,5 +1,5 @@
 {
-  "_doc": "Imperium Astra visual theme (presentation only; no rule numbers, no space_type / prices / rents / opcodes). Selected by data/ui.json theme_path. colors: hex strings read by UiStyle.color(). button / panel: StyleBoxFlat sizes in canvas units (about 1 dp). board: BoardView chrome; corner_colors keyed by the stable space_type name, corner_marks identify the original vector symbols drawn under the corner label. starfield: procedural backdrop (StarfieldBackground), deterministic from seed. menu_background: main menu backdrop (MainMenuBackground) colors and motion; pan_speed in skyline tiles per second, parallax and ground (ground lines as height shares) per layer far..near, *_seconds loop periods, balloon_bob_height a height share. Font sizes and touch sizes stay in data/ui.json.",
+  "_doc": "SIDE_PANEL_B_ANIM: gain #a5efb0 is a shared _placeholder money-gain color (Q20 palette; tune on Fold). Imperium Astra visual theme (presentation only; no rule numbers, no space_type / prices / rents / opcodes). Selected by data/ui.json theme_path. colors: hex strings read by UiStyle.color(). button / panel: StyleBoxFlat sizes in canvas units (about 1 dp). board: BoardView chrome; corner_colors keyed by the stable space_type name, corner_marks identify the original vector symbols drawn under the corner label. starfield: procedural backdrop (StarfieldBackground), deterministic from seed. menu_background: main menu backdrop (MainMenuBackground) colors and motion; pan_speed in skyline tiles per second, parallax and ground (ground lines as height shares) per layer far..near, *_seconds loop periods, balloon_bob_height a height share. Font sizes and touch sizes stay in data/ui.json.",
   "id": "imperium_astra",
   "display_name": "Imperium Astra",
   "dialogue_path": "res://data/themes/imperium_astra/dialogue.json",
@@ -14,6 +14,7 @@
     "text": "#e6ecff",
     "text_muted": "#9aa6d6",
     "alert": "#ff9a8a",
+    "gain": "#a5efb0",
     "button": "#1a2350",
     "button_hover": "#24306a",
     "button_pressed": "#3a2f0f",

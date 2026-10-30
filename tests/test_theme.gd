@@ -7,7 +7,7 @@ extends TestCase
 
 const REQUIRED_COLORS: Array[String] = [
 	"background", "background_top", "panel", "panel_border", "accent", "accent_dim", "text",
-	"text_muted", "alert", "button", "button_hover", "button_pressed", "button_disabled",
+	"text_muted", "alert", "gain", "button", "button_hover", "button_pressed", "button_disabled",
 	"button_border", "button_text", "button_text_disabled", "input", "board_cell", "board_border",
 	"board_center", "board_frame", "dice_face", "dice_pip", "star",
 ]
@@ -26,7 +26,7 @@ const FIXTURE_INDEX := "res://tests/fixtures/themes/index.json"
 ## match across packs); every other REQUIRED_COLORS key must differ between imperium_astra and
 ## astra_alt by at least MIN_PACK_DISTANCE (P5 Q20 palette pass).
 const MAY_SHARE: Array[String] = [
-	"text", "text_muted", "alert", "button_text", "button_text_disabled", "dice_face", "dice_pip", "star",
+	"text", "text_muted", "alert", "gain", "button_text", "button_text_disabled", "dice_face", "dice_pip", "star",
 ]
 const MIN_PACK_DISTANCE := 0.05
 

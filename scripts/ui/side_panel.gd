@@ -2,9 +2,9 @@ class_name SidePanel
 extends Control
 ## Per-seat side panel (P5 SIDE_PANEL_A1, Shibi GO Oct 29 2026): one SeatCard per seat, in seat
 ## order, in a strip of the screen the panel owns (Main.layout_rects reserves it at the play area's
-## far edge, SIDE_PANEL_A2; nothing else draws there). Layout and state only: no Tween,
-## AnimationPlayer, _process motion or UiFx call here; the hooks below are instant setters that
-## SIDE_PANEL_B_ANIM (Codex) animates in place.
+## far edge, SIDE_PANEL_A2; nothing else draws there). SIDE_PANEL_B_ANIM steps presentation motion
+## analytically through advance / _process, independently of BoardView's queue and MatchGate.
+## Hooks are instant when animate is off, the panel is hidden or the effect's duration is zero.
 ##
 ## A card shows the seat's token (its SpacePiece, else a colour disc with the seat number) over its
 ## cash and, on a full card, a details column: name (ellipsis), deeds owned, net worth (NetWorth.of)
@@ -21,14 +21,15 @@ extends Control
 ## Cards place their own nodes from font string widths (no containers), so the geometry is the same
 ## outside the tree.
 ##
-## Hook contract (Codex animates inside these in SIDE_PANEL_B_ANIM and changes nothing else):
+## Hook contract (SIDE_PANEL_B_ANIM animates inside these without changing layout):
 ## - SeatCard.set_cash(value, delta) / set_owned(value, delta): delta = value - the last value the
 ##   card was given (0 on the first call at build, so a new match shows no popup; 0 when unchanged);
 ##   every panel refresh (show_values) sends both.
 ## - SeatCard.set_net_worth(value); SeatCard.set_active(on) (false for a bankrupt seat, sent in the
 ##   same refresh that first sets its bankrupt badge); SeatCard.set_badges(flags) with exactly the
 ##   keys {"jail": bool, "bankrupt": bool, "pardon": int (card count), "bot": bool}.
-## - SidePanel.set_panel_shown(on): the only way the panel is shown or hidden.
+## - SidePanel.set_panel_shown(on): instant visibility; hiding finishes motion, showing restarts
+##   the active border's pulse. It retains the active border's visibility state while hidden.
 ## - Per card, nodes to animate without a layout change: fx_layer (plain Control over the card,
 ##   clip_contents off, for floating popups) and glow_frame (Panel with its own StyleBoxFlat in the
 ##   seat colour, carrying the static active border; border widths never change at run time). The
@@ -36,7 +37,10 @@ extends Control
 ## - SeatCard.money_text(value): the cash figure on a full card ("$1500"); SeatCard.short_money_text
 ##   (value): the cash on a compact card and the net worth ("$12.5k" above side_money_sample);
 ##   SeatCard.cash_text(value): the card's cash form for its mode now. Switching between compact and
-##   full re-renders the cash from last_cash (fit(), only on a switch).
+##   full finishes number ticks and re-renders the cash from last_cash (fit(), only on a switch).
+## - Cash and worth tick from the shown integer; unchanged refreshes preserve motion. Cash deltas
+##   make capped, coalescing popups under fx_layer. Badges appear immediately and fade in, hide
+##   immediately and reflow; repeats preserve fades. Active repeats preserve the pulse phase.
 ## - Cards are built once in setup() and never freed or rebuilt during the match; their content
 ##   changes only through the hooks (name and badge words are set once at build).
 
@@ -47,12 +51,47 @@ const BADGE_KEYS: Array[String] = ["jail", "bankrupt", "pardon", "bot"]
 ## The word before the net worth figure. TODO(Q-networth-label): `_placeholder`, the dig's neutral word.
 const WORTH_LABEL_PLACEHOLDER := "worth"
 
-## Set by Main with BoardView.animate (Main.start); the A1 / A2 hooks never read it.
+## Set by Main with BoardView.animate (Main.start); cards also read this panel's own visible flag.
 var animate := false
 ## One card per seat, in seat order (index = player id).
 var cards: Array[SeatCard] = []
 ## How the cards are laid out now (the last place_in that could show them).
 var mode: Mode = Mode.HIDDEN
+
+
+## Analytic whole-number tick; no nodes, timers or tree dependencies.
+class NumberTick extends RefCounted:
+	var shown := 0
+	var target := 0
+	var start := 0
+	var elapsed := 0.0
+	var running := false
+
+	func snap(value: int) -> void:
+		shown = value
+		target = value
+		running = false
+
+	func retarget(value: int) -> void:
+		start = shown
+		target = value
+		elapsed = 0.0
+		running = start != target
+
+	func advance(delta: float, duration: float) -> void:
+		elapsed += delta
+		if duration <= 0.0 or elapsed >= duration:
+			snap(target)
+		else:
+			shown = roundi(lerpf(float(start), float(target), elapsed / duration))
+
+
+## A live popup's state; its Label is the only added node, under the reserved fx_layer.
+class MoneyPopup extends RefCounted:
+	var label: Label
+	var amount := 0
+	var elapsed := 0.0
+	var origin := Vector2.ZERO
 
 
 ## Where the cards go in a strip (layout_for), in the strip's coordinates: the mode, one rect per
@@ -142,7 +181,7 @@ class SeatCard extends Control:
 	var badges: Dictionary = {}
 	## The active border (set_active): its own StyleBoxFlat in the seat colour, no fill.
 	var glow_frame: Panel
-	## Plain Control over the card for floating popups (B).
+	## Plain Control over the card for floating popups; fit never moves its children.
 	var fx_layer: Control
 	## What the hooks were given last (set_cash / set_owned deltas are value - last value).
 	var last_cash := 0
@@ -158,6 +197,13 @@ class SeatCard extends Control:
 	var _font_size := 14
 	var _cash_slot := Rect2()
 	var _worth_slot := Rect2()
+	var _cash_tick := NumberTick.new()
+	var _worth_tick := NumberTick.new()
+	var _worth_initialized := false
+	var _popups: Array[MoneyPopup] = []
+	var _badge_fades: Dictionary[String, float] = {}
+	var _glow_running := false
+	var _glow_elapsed := 0.0
 
 	## The cash and net worth figure: the chips' $ form (main.gd:728) without the leading space.
 	static func money_text(value: int) -> String:
@@ -234,12 +280,22 @@ class SeatCard extends Control:
 		fx_layer.clip_contents = false
 		add_child(fx_layer)
 
-	# --- Hooks (instant in A1) ---------------------------------------------------------------
+	# --- Hooks (analytic motion, instant when disabled) ----------------------------------------
 
 	func set_cash(value: int, delta: int) -> void:
 		last_cash = value
 		last_cash_delta = delta
-		cash_label.text = cash_text(value)
+		if not _motion_enabled():
+			finish_motion()
+		elif delta != 0:
+			if UiStyle.num("side_tick_seconds", 0.3) > 0.0:
+				_cash_tick.retarget(value)
+			else:
+				_cash_tick.snap(value)
+			_add_popup(delta)
+		elif not _cash_tick.running:
+			_cash_tick.snap(value)
+		cash_label.text = cash_text(_cash_tick.shown)
 		_place_cash()
 
 	func set_owned(value: int, delta: int) -> void:
@@ -248,11 +304,26 @@ class SeatCard extends Control:
 		owned_label.text = owned_text(value)
 
 	func set_net_worth(value: int) -> void:
-		worth_label.text = short_money_text(value)
+		if not _motion_enabled():
+			finish_motion()
+		if not _worth_initialized or not _motion_enabled() or UiStyle.num("side_tick_seconds", 0.3) <= 0.0:
+			_worth_tick.snap(value)
+		elif value != _worth_tick.target:
+			_worth_tick.retarget(value)
+		_worth_initialized = true
+		worth_label.text = short_money_text(_worth_tick.shown)
 		_place_worth()
 
 	func set_active(on: bool) -> void:
 		glow_frame.visible = on
+		if not _motion_enabled():
+			finish_motion()
+		if not on or not _motion_enabled() or UiStyle.num("side_glow_seconds", 1.8) <= 0.0:
+			_glow_running = false
+			glow_frame.modulate = Color.WHITE
+		elif not _glow_running:
+			_glow_elapsed = 0.0
+			_glow_running = true
 
 	## The cash figure for `value` in this card's mode now: short_money_text on a compact card, else
 	## money_text.
@@ -260,14 +331,124 @@ class SeatCard extends Control:
 		return short_money_text(value) if compact else money_text(value)
 
 	func set_badges(flags: Dictionary) -> void:
+		if not _motion_enabled():
+			finish_motion()
 		var held := int(flags.get("pardon", 0))
-		(badges["jail"] as Label).visible = bool(flags.get("jail", false))
-		(badges["bankrupt"] as Label).visible = bool(flags.get("bankrupt", false))
+		for key: String in SidePanel.BADGE_KEYS:
+			var badge := badges[key] as Label
+			var on := held > 0 if key == "pardon" else bool(flags.get(key, false))
+			var appeared := on and not badge.visible
+			badge.visible = on
+			if not on or not _motion_enabled() or UiStyle.num("side_badge_fade_seconds", 0.18) <= 0.0:
+				_badge_fades.erase(key)
+				badge.modulate = Color.WHITE
+			elif appeared:
+				_badge_fades[key] = 0.0
+				badge.modulate = Color(1, 1, 1, 0)
 		var pardon := badges["pardon"] as Label
-		pardon.visible = held > 0
 		pardon.text = _pardon_word if held <= 1 else "%s x%d" % [_pardon_word, held]
-		(badges["bot"] as Label).visible = bool(flags.get("bot", false))
 		_flow_badges()
+
+	## Read the owning panel, including outside the tree; Main needs no per-card animation setter.
+	func _motion_enabled() -> bool:
+		var panel := get_parent() as SidePanel
+		return panel != null and panel.animate and panel.visible
+
+	func _stop_ticks() -> void:
+		_cash_tick.snap(last_cash)
+		_worth_tick.snap(_worth_tick.target)
+		worth_label.text = short_money_text(_worth_tick.shown)
+		_place_worth()
+
+	## Retain visibility (especially the active border), finish text, remove live popups immediately.
+	func finish_motion() -> void:
+		_stop_ticks()
+		cash_label.text = cash_text(last_cash)
+		_place_cash()
+		_clear_popups()
+		_badge_fades.clear()
+		for key: String in SidePanel.BADGE_KEYS:
+			(badges[key] as Label).modulate = Color.WHITE
+		_glow_running = false
+		glow_frame.modulate = Color.WHITE
+
+	func _clear_popups() -> void:
+		while not _popups.is_empty():
+			_remove_popup(0)
+
+	func _remove_popup(index: int) -> void:
+		_popups[index].label.free()
+		_popups.remove_at(index)
+
+	func _add_popup(delta: int) -> void:
+		if UiStyle.num("side_popup_seconds", 0.8) <= 0.0:
+			_clear_popups()
+			return
+		var popup: MoneyPopup
+		if not _popups.is_empty() and _popups[-1].elapsed < UiStyle.num("side_popup_coalesce_seconds", 0.12):
+			popup = _popups[-1]
+			popup.amount += delta
+			if popup.amount == 0:
+				_remove_popup(_popups.size() - 1)
+				return
+		else:
+			var cap := maxi(1, int(UiStyle.num("side_popup_max_per_card", 3.0)))
+			while _popups.size() >= cap:
+				_remove_popup(0)
+			popup = MoneyPopup.new()
+			popup.label = _label(fx_layer, "MoneyPopup", "")
+			popup.amount = delta
+			_popups.append(popup)
+		popup.elapsed = 0.0
+		popup.label.text = ("+" if popup.amount > 0 else "-") + cash_text(absi(popup.amount))
+		popup.label.label_settings.font_color = UiStyle.color("gain" if popup.amount > 0 else "alert")
+		popup.label.size = Vector2(_text_w(popup.label.text), _line_h())
+		popup.origin = Vector2(cash_label.position.x + (cash_label.size.x - popup.label.size.x) * 0.5, cash_label.position.y)
+		popup.label.position = popup.origin
+		popup.label.modulate = Color.WHITE
+
+	func advance(delta: float) -> void:
+		if not _motion_enabled():
+			finish_motion()
+			return
+		delta = maxf(delta, 0.0)
+		var tick_seconds := UiStyle.num("side_tick_seconds", 0.3)
+		if _cash_tick.running:
+			_cash_tick.advance(delta, tick_seconds)
+			cash_label.text = cash_text(_cash_tick.shown)
+			_place_cash()
+		if _worth_tick.running:
+			_worth_tick.advance(delta, tick_seconds)
+			worth_label.text = short_money_text(_worth_tick.shown)
+			_place_worth()
+		var popup_seconds := UiStyle.num("side_popup_seconds", 0.8)
+		for i in range(_popups.size() - 1, -1, -1):
+			var popup := _popups[i]
+			popup.elapsed += delta
+			if popup_seconds <= 0.0 or popup.elapsed >= popup_seconds:
+				_remove_popup(i)
+			else:
+				var progress := popup.elapsed / popup_seconds
+				popup.label.position = popup.origin + Vector2.UP * UiStyle.num("side_popup_rise", 24.0) * progress
+				popup.label.modulate = Color(1, 1, 1, 1.0 - progress)
+		var badge_seconds := UiStyle.num("side_badge_fade_seconds", 0.18)
+		for key: String in _badge_fades.keys():
+			_badge_fades[key] += delta
+			var badge := badges[key] as Label
+			if badge_seconds <= 0.0 or _badge_fades[key] >= badge_seconds:
+				badge.modulate = Color.WHITE
+				_badge_fades.erase(key)
+			else:
+				badge.modulate = Color(1, 1, 1, _badge_fades[key] / badge_seconds)
+		if _glow_running:
+			var glow_seconds := UiStyle.num("side_glow_seconds", 1.8)
+			if glow_seconds <= 0.0:
+				_glow_running = false
+				glow_frame.modulate = Color.WHITE
+			else:
+				_glow_elapsed = fmod(_glow_elapsed + delta, glow_seconds)
+				var wave := (1.0 - cos(TAU * _glow_elapsed / glow_seconds)) * 0.5
+				glow_frame.modulate = Color(1, 1, 1, lerpf(1.0, UiStyle.num("side_glow_min_alpha", 0.45), wave))
 
 	# --- Layout ------------------------------------------------------------------------------
 
@@ -302,6 +483,7 @@ class SeatCard extends Control:
 		token.fit(t)
 		_cash_slot = Rect2(x, y + t + gap, block.x, h)
 		if switched:  # only then: a layout pass in the same mode keeps a tick's text
+			_stop_ticks()
 			cash_label.text = cash_text(last_cash)
 		_place_cash()
 		details.visible = not compact_mode
@@ -503,9 +685,24 @@ func show_values(tc: TurnController) -> void:
 	_push(tc, false)
 
 
-## The only way the panel shows or hides (instant in A1).
+## Instant show / hide; hiding drains motion while retaining the active border's visibility.
 func set_panel_shown(on: bool) -> void:
 	visible = on
+	for card in cards:
+		if on:
+			card.set_active(card.glow_frame.visible)
+		else:
+			card.finish_motion()
+
+
+## Presentation only: never enters the board queue or blocks Main's gate / bot timer.
+func advance(delta: float) -> void:
+	for card in cards:
+		card.advance(delta)
+
+
+func _process(delta: float) -> void:
+	advance(delta)
 
 
 ## Lays the cards out in `strip` (the parent's coordinates) and takes their bounding rect, which it

@@ -20,7 +20,9 @@ const SEATS: Array[int] = [2, 3, 4, 5, 6]
 ## Every data/ui.json key the panel reads.
 const SIDE_KEYS: Array[String] = ["side_card_min_size", "side_card_max_width", "side_card_max_height",
 	"side_card_gap", "side_active_border_width", "side_card_padding", "side_token_size",
-	"side_token_piece_min_size", "side_line_gap", "side_column_gap", "side_tint_alpha", "side_money_sample"]
+	"side_token_piece_min_size", "side_line_gap", "side_column_gap", "side_tint_alpha", "side_money_sample",
+	"side_popup_seconds", "side_tick_seconds", "side_glow_seconds", "side_badge_fade_seconds",
+	"side_popup_coalesce_seconds", "side_popup_max_per_card", "side_popup_rise", "side_glow_min_alpha"]
 ## Full-card minimum per pack, measured at tip with the engine label font (Open Sans SemiBold 14 px,
 ## line 20, "$9999" 40): the longest seat name sets the width for "Commander N" (96), the worth line
 ## "worth $9999" (85) for "Pilot N" (43). The compact minimum is 50 x 50 in both.

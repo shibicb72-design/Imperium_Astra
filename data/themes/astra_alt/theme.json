@@ -1,5 +1,5 @@
 {
-  "_doc": "Alternate presentation pack: cool teal / sea-green palette (P5 Q20), distinct from imperium_astra navy + gold; the Jail and Free Parking corner tints stay shared. Content is words only; shared card defaults retained.",
+  "_doc": "SIDE_PANEL_B_ANIM: gain #a5efb0 is a shared _placeholder money-gain color (Q20 palette; tune on Fold). Alternate presentation pack: cool teal / sea-green palette (P5 Q20), distinct from imperium_astra navy + gold; the Jail and Free Parking corner tints stay shared. Content is words only; shared card defaults retained.",
   "id": "astra_alt",
   "display_name": "Astra Alt",
   "dialogue_path": "res://data/themes/astra_alt/dialogue.json",
@@ -14,6 +14,7 @@
     "text": "#e6ecff",
     "text_muted": "#93bdb8",
     "alert": "#ff9a8a",
+    "gain": "#a5efb0",
     "button": "#134244",
     "button_hover": "#1a4f50",
     "button_pressed": "#1e4b40",
